@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Тендер-монітор</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--card:#1e293b;--card2:#334155;--border:#334155;--accent:#14b8a6;--blue:#3b82f6;--green:#10b981;--warn:#f59e0b;--danger:#ef4444;--orange:#f97316;--violet:#8b5cf6;--text:#e2e8f0;--muted:#94a3b8;--amber:#fbbf24}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;padding-bottom:60px}
+#app{max-width:800px;margin:0 auto}
+
+/* Header */
+#header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 16px;position:sticky;top:0;z-index:50}
+.top-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.logo{font-size:18px;font-weight:800;color:#fff;cursor:pointer}
+.logo-sub{font-size:10px;color:var(--muted);margin-top:1px}
+.dev-credit{font-size:14px;font-weight:800;color:var(--danger)}
+.header-btns{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.hbtn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:5px 10px;font-size:12px;white-space:nowrap;transition:all .2s}
+.hbtn:hover{border-color:var(--accent);color:var(--accent)}
+.hbtn.active{border-color:var(--accent);background:rgba(20,184,166,.15);color:var(--accent)}
+.hbtn.blue{border-color:var(--blue);color:var(--blue)}
+.hbtn.blue:hover{background:rgba(59,130,246,.1)}
+.hbtn.amber{border-color:var(--amber);color:#fbbf24}
+
+/* Search */
+.search-wrap{position:relative;margin-top:10px}
+.search-wrap input{width:100%;background:#1e293b;border:1.5px solid var(--border);border-radius:12px;padding:11px 90px 11px 38px;color:#fff;font-size:15px;outline:none;transition:border .2s}
+.search-wrap input:focus{border-color:var(--accent)}
+.search-wrap input::placeholder{color:#64748b}
+.search-ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:16px}
+.pin-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:none}
+.mode-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.mode-btn{padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+.mode-btn.active{border-color:var(--accent);background:rgba(20,184,166,.15);color:var(--accent)}
+.pinned-tag{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(20,184,166,.12);border:1px solid var(--accent);border-radius:20px;font-size:13px;color:var(--accent);margin:8px 0}
+.pinned-tag .x{cursor:pointer;font-size:16px;font-weight:700;color:var(--muted);margin-left:4px}
+.pinned-tag .x:hover{color:var(--danger)}
+
+/* Body */
+#body{padding:12px 16px 0}
+
+/* Start screen */
+#start-screen{text-align:center;padding:50px 20px}
+.start-title{font-size:22px;font-weight:800;margin-bottom:4px}
+.start-sub{font-size:14px;color:var(--muted);margin-bottom:20px;line-height:1.5}
+.big-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px 28px;border-radius:14px;border:none;background:linear-gradient(135deg,#3b82f6,#38bdf8);color:#fff;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:12px;transition:opacity .2s}
+.big-btn:disabled{opacity:.5}
+.or-div{text-align:center;color:var(--muted);font-size:12px;margin:12px 0;position:relative}
+.or-div::before,.or-div::after{content:"";position:absolute;top:50%;width:38%;height:1px;background:var(--border)}
+.or-div::before{left:0}.or-div::after{right:0}
+.upload-zone{border:2px dashed var(--border);border-radius:14px;padding:16px;text-align:center;cursor:pointer;background:var(--card);font-size:13px;color:var(--muted);margin-bottom:8px;transition:border .2s}
+.upload-zone:hover{border-color:var(--accent)}
+.upload-zone.done{border-color:var(--green);border-style:solid}
+.hint-box{padding:14px;background:var(--card);border-radius:12px;border:1px solid var(--border);font-size:12px;color:var(--muted);margin-top:16px;line-height:1.6}
+.err-box{margin-top:10px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid var(--danger);border-radius:10px;color:var(--danger);font-size:13px}
+
+/* Stats */
+.stats-bar{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:12px}
+@media(max-width:640px){.stats-bar{grid-template-columns:repeat(4,1fr)}}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;transition:all .15s}
+.stat-card:hover{border-color:var(--accent)}
+.stat-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.stat-num{font-size:18px;font-weight:800}
+.stat-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+
+/* Sort & export row */
+.sort-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px}
+.sort-btns{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted);overflow-x:auto}
+.sort-btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted);font-size:11px;cursor:pointer;white-space:nowrap;transition:all .15s}
+.sort-btn.active{border-color:var(--accent);background:rgba(20,184,166,.15);color:var(--accent)}
+.export-row{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center;font-size:11px}
+.exp-btn{padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;font-weight:600;font-size:11px;transition:all .15s}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:6px;overflow:hidden;cursor:pointer;transition:border .15s}
+.card:hover{border-color:#475569}
+.card.conflict{border-color:rgba(251,191,36,.4)}
+.card.expanded{border-color:var(--accent)}
+.card-head{padding:10px 12px}
+.card-top{display:flex;align-items:flex-start;gap:8px}
+.pill-ico{width:28px;height:28px;flex-shrink:0;margin-top:2px}
+.card-info{flex:1;min-width:0}
+.drug-name{font-size:13px;font-weight:700;color:var(--accent);line-height:1.35}
+.mnn-line{font-size:10px;color:var(--muted);font-style:italic;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conflict-hint{font-size:10px;color:var(--amber);margin-top:2px}
+.chosen-hint{font-size:10px;color:var(--accent);margin-top:2px}
+.card-qty{text-align:right;flex-shrink:0}
+.card-qty .num{font-size:15px;font-weight:700}
+.card-qty .unit{font-size:10px;color:var(--muted)}
+.bar-wrap{display:flex;align-items:center;gap:8px;margin-top:6px;padding:0 12px 0 48px}
+.bar-bg{flex:1;height:5px;background:#374151;border-radius:10px;overflow:hidden}
+.bar-fill{height:100%;border-radius:10px;transition:width .3s}
+.bar-pct{font-size:11px;color:var(--muted);flex-shrink:0}
+
+/* Card detail */
+.card-detail{padding:0 12px 12px;border-top:1px solid var(--border);margin-top:6px;display:none}
+.card.expanded .card-detail{display:block}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}
+.mini-stat{background:var(--card2);border-radius:8px;padding:8px 10px}
+.mini-stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.mini-stat .val{font-size:14px;font-weight:600;margin-top:2px}
+.mini-stat .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.supplier-pick{margin:8px 0 10px}
+.supplier-pick .title{font-size:12px;color:var(--amber);font-weight:600;margin-bottom:6px}
+.supplier-pick .btns{display:flex;flex-wrap:wrap;gap:4px}
+.sup-btn{padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:11px;cursor:pointer;transition:all .15s}
+.sup-btn.active{border-color:var(--accent);background:rgba(20,184,166,.15);color:var(--accent)}
+.tender-card{background:var(--card2);border-radius:8px;padding:8px 10px;margin-top:6px;border-left:3px solid var(--accent)}
+.tender-card .sup{font-size:13px;font-weight:600;color:var(--accent)}
+.tender-card .con{font-size:11px;color:var(--muted);margin-top:2px}
+.tender-card .comm{font-size:11px;color:var(--text);margin-top:4px;font-style:italic}
+.tender-card .row{display:flex;justify-content:space-between;font-size:12px;margin-top:3px}
+
+/* Agreements */
+.agr-card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:6px;padding:12px;cursor:pointer;transition:border .15s}
+.agr-card:hover{border-color:#475569}
+.agr-card.expanded{border-color:var(--accent)}
+.agr-sup{font-size:15px;font-weight:700;color:var(--accent)}
+.agr-con{font-size:12px;color:var(--muted);margin-top:2px}
+.agr-meta{display:flex;gap:12px;margin-top:6px;font-size:12px;color:var(--muted)}
+.agr-detail{border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:none}
+.agr-card.expanded .agr-detail{display:block}
+.agr-item{padding:6px 0;border-bottom:1px solid rgba(51,65,85,.4);font-size:12px}
+.agr-item:last-child{border-bottom:none}
+.agr-item .name{font-weight:600;margin-bottom:2px}
+.agr-item .mnn{font-size:10px;color:var(--muted);font-style:italic;margin-bottom:3px}
+.agr-item .row{display:flex;justify-content:space-between;margin-top:2px}
+
+/* Conflicts page */
+.conflict-banner{padding:10px 14px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:12px;font-size:13px;color:#fcd34d;margin-bottom:12px}
+.conflict-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px}
+.conflict-drug{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:4px}
+.conflict-meta{font-size:11px;color:var(--muted);margin-bottom:8px}
+.conflict-opt{padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);margin-bottom:4px;cursor:pointer;transition:all .15s;display:flex;justify-content:space-between;align-items:center}
+.conflict-opt:hover{border-color:var(--accent)}
+.conflict-opt.chosen{border-color:var(--accent);background:rgba(20,184,166,.1)}
+.conflict-opt .name{font-size:13px;font-weight:600}
+.conflict-opt .info{font-size:10px;color:var(--muted);margin-top:2px}
+.conflict-opt .check{color:var(--accent);font-size:16px;flex-shrink:0}
+
+.empty-state{text-align:center;padding:50px 20px;color:var(--muted)}
+
+mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2px}
+
+/* Loader */
+#loader{display:none;text-align:center;padding:60px 20px;color:var(--muted)}
+.loader-ico{font-size:44px;margin-bottom:14px}
+.loader-spin{animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Hide/show */
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div class="top-row">
+      <div>
+        <div class="logo" onclick="goHome()">📊 Тендер-монітор</div>
+        <div class="dev-credit">Developed by Ostap Khmil</div>
+      </div>
+      <div class="header-btns hidden" id="nav-btns">
+        <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг</button>
+        <button class="hbtn" id="btn-agreements" onclick="switchView('agreements')">Угоди</button>
+        <button class="hbtn amber hidden" id="btn-conflicts" onclick="switchView('conflicts')">⚡ <span id="conflict-count">0</span></button>
+        <button class="hbtn blue" onclick="loadFromDrive(true)">☁️ Оновити</button>
+        <button class="hbtn" onclick="showManualUpload()">📂</button>
+      </div>
+    </div>
+    <div id="search-area" class="hidden">
+      <div class="mode-row" id="mode-row">
+        <button class="mode-btn active" onclick="setMode('name',this)">Назва</button>
+        <button class="mode-btn" onclick="setMode('mnn',this)">МНН</button>
+        <button class="mode-btn" onclick="setMode('supplier',this)">Постачальник</button>
+        <button class="mode-btn" onclick="setMode('contract',this)">Угода</button>
+      </div>
+      <div id="pinned-wrap" class="hidden"></div>
+      <div class="search-wrap" id="search-wrap">
+        <span class="search-ico">🔍</span>
+        <input id="search-input" placeholder="Назва препарату..." oninput="onSearchInput(this.value)" onkeydown="if(event.key==='Enter')pinSearch()">
+        <button class="pin-btn" id="pin-btn" onclick="pinSearch()">📌 Закріпити</button>
+      </div>
+    </div>
+  </div>
+  <div id="body">
+    <div id="start-screen">
+      <div style="font-size:48px;margin-bottom:16px">📊</div>
+      <div class="start-title">Тендер-монітор</div>
+      <div class="dev-credit" style="font-size:18px;margin-bottom:6px">Developed by Ostap Khmil</div>
+      <div class="start-sub">Моніторинг тендерних угод та закупівель</div>
+      <button class="big-btn" id="drive-btn" onclick="loadFromDrive(false)">☁️ Завантажити з Google Drive</button>
+      <div class="or-div">або завантажити файли вручну</div>
+      <div class="upload-zone" id="uz-p" onclick="document.getElementById('file-p').click()">
+        <input id="file-p" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'p')">
+        + 1. Закупівлі (з 1С)
+      </div>
+      <div class="upload-zone" id="uz-t" onclick="document.getElementById('file-t').click()">
+        <input id="file-t" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'t')">
+        + 2. Тендерні угоди
+      </div>
+      <div id="start-error"></div>
+      <div class="hint-box">
+        💡 Натисніть «Завантажити з Google Drive» — працює на ПК та телефоні.<br>
+        Або завантажте .xlsx файли вручну з комп'ютера.<br>
+        Дані кешуються у браузері.
+      </div>
+    </div>
+    <div id="loader"><div class="loader-ico"><span class="loader-spin">⟳</span></div><div id="loader-text">Завантаження...</div></div>
+    <div id="main-screen" class="hidden"></div>
+  </div>
+</div>
+
+<script>
+// ═══════ CONFIG ═══════
+const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
+const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
+const CACHE_KEY = "tender_monitor_v6";
+
+// ═══════ STATE ═══════
+let allData=[], allTenders=[], overrides={};
+let currentView="monitor", searchMode="name", currentSearch="", pinnedSearch="";
+let currentFilter="all", currentSort="status";
+let expandedCard=null, expandedAgr=null;
+let purchasesRaw=null, tendersRaw=null;
+let lastUpdated=null;
+
+// ═══════ CACHE ═══════
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}}
+function loadCache(){try{const r=localStorage.getItem(CACHE_KEY);if(!r)return null;const d=JSON.parse(r);return d&&d.data&&d.tenders?d:null}catch{return null}}
+
+// ═══════ XLSX PARSING ═══════
+function parsePurchases(buf){
+  const wb=XLSX.read(buf,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  const drugs={};
+  for(let i=10;i<rows.length;i++){
+    const r=rows[i];if(!r||!r[0])continue;
+    const a=String(r[0]).trim(),d=r[3],f=r[5],g=r[6],h=r[7];
+    if(g&&!d&&!f)continue;
+    if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
+      if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
+      drugs[a].qty+=g||0;drugs[a].sum+=(typeof h==="number"?h:0);
+    }
+  }
+  return Object.entries(drugs).sort((a,b)=>a[0].localeCompare(b[0],"uk"))
+    .map(([name,d])=>({name,unit:d.unit,qty:Math.round(d.qty*100)/100,sum:Math.round(d.sum*100)/100}));
+}
+function parseQty(v){if(typeof v==="number")return v;if(typeof v==="string"){const s=v.replace(/\u00a0/g," ").trim();if(/^\d+\.\d{3}$/.test(s))return parseInt(s.replace(".",""));const m=s.match(/^([\d\s]+)/);if(m){const n=m[1].replace(/\s/g,"");if(/^\d+$/.test(n))return parseInt(n)}}return null}
+function parsePrice(v){if(typeof v==="number")return v;if(typeof v==="string"){const m=v.replace(/\u00a0/g," ").trim().match(/^([\d\s]+[.,]?\d*)/);if(m)try{return parseFloat(m[1].replace(/\s/g,"").replace(",","."))}catch{}}return null}
+function parseTenders(buf){
+  const wb=XLSX.read(buf,{type:"array"});
+  const tenders=[];
+  for(const sn of wb.SheetNames){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});let contract=null;
+    for(const r of rows){if(!r)continue;
+      const[a,b,c,d,eR,fv,gv]=[r[0],r[1],r[2],r[3],r[4],r[5],r[6]];
+      if(typeof a==="string"&&(a.includes("Договір")||a.includes("Договору"))){contract=a.trim();continue}
+      if(!b)continue;const bs=String(b).trim();
+      if(bs.includes("Найменування")||bs.includes("Міжнародна")||bs.includes("Загальна")||bs.includes("ПДВ"))continue;
+      const e=parseQty(eR);if(e==null||e<=0||!c)continue;
+      tenders.push({supplier:sn,contract:contract||"",mnn:bs,commercial:String(c).trim(),unit:d?String(d).trim():"",qty:e,price:parsePrice(gv)??parsePrice(fv)});
+    }
+  }
+  return tenders;
+}
+
+// ═══════ MATCHING ═══════
+const STOP=new Set("РОЗЧИН ДЛЯ ІНФУЗІЙ ТАБЛЕТКИ КАПСУЛИ ПОРОШОК СУСПЕНЗІЯ КОНЦЕНТРАТ ЛІОФІЛІЗАТ ВКРИТІ ПО МЛ МГ Р-Н ФЛАК АМП В У І ТА АБО ЛІОФ ПОР КРАПЛІ ОЧНІ ТАБ ЕМУЛЬС АЕРОЗОЛЬ КОНЦ СУСП КАП НАШКІРН НАШКІРНИЙ ОЧН РОЗЧ-К ПЕРЕНТЕРАЛЬНОГО ЗАСТОС".split(" "));
+function norm(s){return s.toUpperCase().trim().replace(/®/g,"").replace(/\u00a0/g," ").replace(/\u0060/g,"'").replace(/\u2019/g,"'").replace(/\s*-\s*/g,"-").replace(/\s+/g," ")}
+function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|%|МО|Г|Л|МГ\/МЛ)$/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("("))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
+function stemUk(w){if(w.length<=4)return w;for(const s of["ИНУ","ІНУ","ОНУ","АТУ","ЕТУ","ИНА","ІНА","ОМ","ІМ","ОЇ","ЕЙ","ІЙ","ОГО","ОМУ","ІВ","ІН","АМ","ЯМ","У","А","Е","І","И","Ю","Я","О"])if(w.endsWith(s)&&w.length-s.length>=4)return w.slice(0,-s.length);return w}
+function getForm(s){const u=s.toUpperCase(),f=new Set();if(/РОЗЧИН|Р-Н|Р\/Н|Д\/ІН|КОНЦ\.|КОНЦЕНТРАТ/.test(u))f.add("SOL");if(/ТАБЛ|ТАБ[\s.,]/.test(u))f.add("TAB");if(/КАПС/.test(u))f.add("CAP");if(/КРАПЛІ|КР\.ОЧН|ОЧНІ/.test(u))f.add("DRP");if(/СУПОЗИТОР/.test(u))f.add("SUP");if(/ПОРОШОК|ПОР[\s.,]|ПОР\//.test(u))f.add("PWD");if(/ЕМУЛЬС|ЕМУЛ/.test(u))f.add("EMU");if(/АЕРОЗОЛЬ/.test(u))f.add("AER");if(/СУСПЕНЗІЯ|СУСП/.test(u))f.add("SSP");if(/ІНФУЗІЙ|ІНФУЗ/.test(u))f.add("INF");if(/ІНГАЛЯЦІ/.test(u))f.add("INH");if(/ГРАНУЛИ|ГРАН/.test(u))f.add("GRN");if(/МАЗЬ/.test(u))f.add("OIN");return f}
+function getDoses(s){const d=new Set();for(const m of norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){const v=m[1].replace(",","."),u=m[2];if(u==="Г")try{d.add(String(Math.round(parseFloat(v)*1000))+"МГ")}catch{d.add(v+"Г")}else d.add(v+u)}return d}
+function getVolumes(s){const u=s.toUpperCase().replace(/\u00a0/g," "),v=new Set();for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*МЛ/g))v.add(parseFloat(m[1].replace(",",".")));for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*Л[\s.,)]/g))v.add(parseFloat(m[1].replace(",","."))*1000);return v}
+function tokMatch(pt,tt){if(!pt.length||!tt.length)return false;const p0=pt[0],t0=tt[0];if(p0===t0)return true;const pp=p0.split("-"),tp=t0.split("-");if((pp.length>1||tp.length>1)&&pp[0]===tp[0]&&pp[0].length>=4)return true;if(p0.length>=6&&t0.startsWith(p0))return true;if(t0.length>=6&&p0.startsWith(t0))return true;const ps=stemUk(p0),ts=stemUk(t0);if(ps===ts&&ps.length>=5)return true;if(ps.length>=5&&ts.startsWith(ps))return true;if(ts.length>=5&&ps.startsWith(ts))return true;if(pp.length>1||tp.length>1){const pps=stemUk(pp[0]),tps=stemUk(tp[0]);if(pps===tps&&pps.length>=4)return true;if(pps.length>=5&&tps.startsWith(pps))return true;if(tps.length>=5&&pps.startsWith(tps))return true}const pn=p0.replace(/И/g,"І"),tn=t0.replace(/И/g,"І");if(pn===tn&&pn.length>=4)return true;if(pn.length>=6&&tn.startsWith(pn))return true;if(tn.length>=6&&pn.startsWith(tn))return true;if(pt.length>=2){const c=pt.slice(0,2).join("-");if(c===t0)return true}if(tt.length>=2){const c=tt.slice(0,2).join("-");if(c===p0)return true}return false}
+function setsOverlap(a,b){for(const x of a)if(b.has(x))return true;return false}
+const CF=new Set(["SOL","INF","PWD"]);function formsOk(pF,tF){if(!pF.size||!tF.size)return true;if(setsOverlap(pF,tF))return true;return[...pF].some(f=>CF.has(f))&&[...tF].some(f=>CF.has(f))}
+function extractPk(n){const m=n.match(/[№#N]\s*(\d+)/);return m?parseInt(m[1]):1}
+const PACK_U=new Set(["упк","уп","пач","пак","паков","пачка","упак","упак."]);
+const SINGLE_U=new Set(["ампул","капс","капс.","таб","конт","флак","шпр","пляш","шт","штуки","туб","каністр","компл","пар"]);
+const T_SINGLE=new Set(["шпр","шприц","фл","фл.","флак","флакон","флк","амп","ампул","ампула","пляш","пляшка","саше","таб","табл","капс","капе","контейнер","штука","туб","супп","кан."]);
+function cDate(c){if(!c)return[9999,1,1];let m=c.match(/(?:від|Авд)\s+(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);if(m){let y=parseInt(m[3]);if(y<100)y+=2000;return[y,parseInt(m[2]),parseInt(m[1])]}const mo={"січня":1,"лютого":2,"березня":3,"квітня":4,"травня":5,"червня":6,"липня":7,"серпня":8,"вересня":9,"жовтня":10,"листопада":11,"грудня":12};m=c.match(/від\s+[«"]?(\d{1,2})[»"]?\s+(\w+)\s+(\d{4})/);if(m)return[parseInt(m[3]),mo[m[2].toLowerCase()]||1,parseInt(m[1])];m=c.match(/від\s+(\d{1,2}),(\d{1,2})\s+(\d{4})/);if(m)return[parseInt(m[3]),parseInt(m[2]),parseInt(m[1])];return[9999,1,1]}
+
+function matchAll(purchases,tenders,ov={}){
+  const results=[];
+  for(const p of purchases){
+    const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
+    const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=stemUk(pt[1]),s2=stemUk(tt[1]);if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1))continue}if(!formsOk(pF,getForm(t.commercial)))continue;bm.push(i)}
+    let matched=bm;
+    if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df;if(matched.length>1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf}}
+    const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
+    let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
+    const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
+    let tInfo=allTI;if(isMulti&&ov[p.name]){const f=allTI.filter(t=>t.s===ov[p.name]);if(f.length)tInfo=f}
+    let consumed=p.qty;
+    if(tInfo.length>1){tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});let left=p.qty;const active=[];for(const t of tInfo){if(left>=t.cq)left-=t.cq;else{if(!active.length)consumed=left;active.push(t);left=0}}if(active.length>0)tInfo=active;else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}}
+    const tq=tInfo.reduce((s,t)=>s+t.cq,0),rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
+    const now=new Date();let earliest=[9999,1,1];tInfo.forEach(t=>{const d=cDate(t.c);if(d[0]<earliest[0]||(d[0]===earliest[0]&&(d[1]<earliest[1]||(d[1]===earliest[1]&&d[2]<earliest[2]))))earliest=d});
+    const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
+    const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
+    const mr=p.qty>0?p.qty/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
+    let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
+    if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
+    results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null});
+  }
+  const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&tenders[i].commercial.slice(0,40)===t.cn.slice(0,40))used.add(i)}));
+  const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
+  for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
+  return results;
+}
+
+// ═══════ STATUS ═══════
+function gs(d){if(!d.t.length)return"none";if(d.pq===0&&d.tq>0)return"idle";if(d.rem<=0)return"exhausted";if(d.ml>0&&d.ml<3)return"critical";if(d.ml>=3&&d.ml<6)return"warning";return"ok"}
+const SO={exhausted:0,critical:1,warning:2,ok:3,idle:4,none:5};
+const BARC={exhausted:"#b91c1c",critical:"#f97316",warning:"#eab308",ok:"#10b981",idle:"#8b5cf6",none:"#888"};
+const SCOL={all:"var(--accent)",exhausted:"var(--danger)",critical:"var(--orange)",warning:"var(--warn)",ok:"var(--green)",idle:"var(--violet)",none:"var(--muted)"};
+const fmt=n=>n==null?"—":Number(n).toLocaleString("uk-UA");
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function hl(text,q){if(!q||!text)return esc(text);const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return esc(text);const re=new RegExp("("+words.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");return esc(text).replace(re,"<mark>$1</mark>")}
+function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=>t.includes(w))}
+
+// ═══════ LOAD ═══════
+async function loadFromDrive(isRefresh){
+  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;showMain();fetchDriveBackground();return}}
+  showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
+  await fetchDriveBackground(true);
+}
+async function fetchDriveBackground(showErr){
+  try{
+    const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()}),fetch(GDRIVE_T).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()})]);
+    purchasesRaw=pB;tendersRaw=tB;
+    const p=parsePurchases(pB);const t=parseTenders(tB);
+    allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+    saveCache();showMain();
+  }catch(e){if(showErr){document.getElementById("start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("start")}}
+}
+function handleFile(file,type){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      if(type==="p"){purchasesRaw=e.target.result;document.getElementById("uz-p").classList.add("done");document.getElementById("uz-p").textContent="✓ "+file.name}
+      else{tendersRaw=e.target.result;document.getElementById("uz-t").classList.add("done");document.getElementById("uz-t").textContent="✓ "+file.name}
+      if(purchasesRaw&&tendersRaw){
+        showLoader("Обробка файлів...");
+        setTimeout(()=>{
+          const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
+          allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();saveCache();showMain();
+        },50);
+      }
+    }catch(err){document.getElementById("start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>'}
+  };
+  reader.readAsArrayBuffer(file);
+}
+function showManualUpload(){showScreen("start")}
+
+// ═══════ OVERRIDE ═══════
+function pickSupplier(drugName,supplier){
+  overrides[drugName]=supplier;
+  if(purchasesRaw&&tendersRaw){
+    const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
+    allData=matchAll(p,t,overrides);saveCache();render();
+  }else{
+    // Recalc from cache
+    allData.forEach(d=>{if(d.n===drugName)d.chosen=supplier});
+    saveCache();render();
+  }
+}
+
+// ═══════ SCREENS ═══════
+function showScreen(name){
+  document.getElementById("start-screen").classList.toggle("hidden",name!=="start");
+  document.getElementById("loader").classList.toggle("hidden",name!=="loader");
+  document.getElementById("main-screen").classList.toggle("hidden",name!=="main");
+  document.getElementById("nav-btns").classList.toggle("hidden",name!=="main");
+  document.getElementById("search-area").classList.toggle("hidden",name!=="main");
+}
+function showLoader(msg){showScreen("loader");document.getElementById("loader-text").textContent=msg}
+function showMain(){showScreen("main");render()}
+function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pinnedSearch="";expandedCard=null;document.getElementById("search-input").value="";render()}
+
+// ═══════ VIEW SWITCHING ═══════
+function switchView(v){currentView=v;expandedCard=null;expandedAgr=null;render();updateNavBtns()}
+function updateNavBtns(){
+  document.getElementById("btn-monitor").classList.toggle("active",currentView==="monitor");
+  document.getElementById("btn-agreements").classList.toggle("active",currentView==="agreements");
+  document.getElementById("btn-conflicts").classList.toggle("active",currentView==="conflicts");
+}
+function setMode(m,btn){searchMode=m;document.querySelectorAll(".mode-btn").forEach(b=>b.classList.remove("active"));btn.classList.add("active");
+  const ph={name:"Назва препарату...",mnn:"МНН...",supplier:"Постачальник...",contract:"Угода..."};
+  document.getElementById("search-input").placeholder=ph[m]||ph.name;currentSearch="";document.getElementById("search-input").value="";render()}
+function onSearchInput(v){currentSearch=v.trim();document.getElementById("pin-btn").style.display=v.trim()?"block":"none";render()}
+function pinSearch(){const v=document.getElementById("search-input").value.trim();if(!v)return;pinnedSearch=v;currentSearch="";document.getElementById("search-input").value="";document.getElementById("pin-btn").style.display="none";render()}
+function unpinSearch(){pinnedSearch="";render()}
+
+// ═══════ SEARCH FILTER ═══════
+function getActiveSearch(){return pinnedSearch||currentSearch}
+function filterData(data){
+  const q=getActiveSearch();
+  let res=data;
+  if(q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);
+    if(searchMode==="name")res=res.filter(d=>multiMatch(d.n,w));
+    else if(searchMode==="mnn")res=res.filter(d=>d.t.some(t=>multiMatch(t.mn,w)));
+    else if(searchMode==="supplier")res=res.filter(d=>d.t.some(t=>multiMatch(t.s,w)));
+    else if(searchMode==="contract")res=res.filter(d=>d.t.some(t=>multiMatch(t.c,w)));
+  }
+  if(currentFilter!=="all")res=res.filter(d=>gs(d)===currentFilter);
+  res=[...res];
+  if(currentSort==="status")res.sort((x,y)=>(SO[gs(x)]??5)-(SO[gs(y)]??5)||x.n.localeCompare(y.n,"uk"));
+  else if(currentSort==="name")res.sort((x,y)=>x.n.localeCompare(y.n,"uk"));
+  else if(currentSort==="months")res.sort((x,y)=>(x.ml||999)-(y.ml||999));
+  else if(currentSort==="pct")res.sort((x,y)=>(y.pct||0)-(x.pct||0));
+  return res;
+}
+
+// ═══════ EXPORT ═══════
+function exportItems(statuses){
+  const items=allData.filter(d=>statuses.includes(gs(d)));
+  const rows=[["Назва","МНН","Од.вим.","Закуплено","По угоді","Залишок","% вибірки","Міс. залишок","Постачальник","Угода","Ціна"]];
+  items.forEach(d=>{const mnn=d.t.length?d.t[0].mn:"";const sup=d.t.map(t=>t.s).join("; ");const con=d.t.map(t=>t.c).join("; ");const price=d.t.length&&d.t[0].p!=null?d.t[0].p:"";rows.push([d.n,mnn,d.du,d.dpq,d.dtq,d.drem,d.pct,d.ml===999?0:d.ml,sup,con,price])});
+  const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
+  const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");a.href="data:text/csv;base64,"+b64;a.download="export.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
+
+// ═══════ RENDER ═══════
+function render(){
+  const mc=allData.filter(d=>d.multi&&!d.chosen).length;
+  const cBtn=document.getElementById("btn-conflicts");
+  cBtn.classList.toggle("hidden",mc===0);document.getElementById("conflict-count").textContent=mc;
+  updateNavBtns();
+  // Pinned search display
+  const pw=document.getElementById("pinned-wrap");
+  const sw=document.getElementById("search-wrap");
+  if(pinnedSearch){
+    const mLabel={name:"Назва:",mnn:"МНН:",supplier:"Постач.:",contract:"Угода:"}[searchMode]||"";
+    pw.innerHTML='<div class="pinned-tag"><span style="color:var(--muted);font-size:11px">'+mLabel+'</span> <strong>'+esc(pinnedSearch)+'</strong><span class="x" onclick="unpinSearch()">×</span></div>';
+    pw.classList.remove("hidden");sw.classList.add("hidden");
+  }else{pw.classList.add("hidden");sw.classList.remove("hidden")}
+
+  const el=document.getElementById("main-screen");
+  if(currentView==="monitor")renderMonitor(el);
+  else if(currentView==="agreements")renderAgreements(el);
+  else if(currentView==="conflicts")renderConflicts(el);
+}
+
+function renderMonitor(el){
+  const counts={all:allData.length,exhausted:0,critical:0,warning:0,ok:0,idle:0,none:0};
+  allData.forEach(d=>counts[gs(d)]++);
+  const items=filterData(allData);
+  const q=getActiveSearch();
+  const hq=searchMode==="name"?q:searchMode==="mnn"?q:"";
+  
+  let h='';
+  // Stats
+  h+='<div class="stats-bar">';
+  for(const[k,l]of[["all","Усі"],["exhausted","Вибрано"],["critical","Критично"],["warning","Увага"],["ok","Норма"],["idle","Без руху"],["none","Без угоди"]]){
+    h+=`<div class="stat-card${currentFilter===k?" active":""}" onclick="currentFilter=currentFilter==='${k}'?'all':'${k}';render()"><div class="stat-num" style="color:${SCOL[k]}">${counts[k]||0}</div><div class="stat-lbl">${l}</div></div>`;
+  }
+  h+='</div>';
+  // Updated
+  if(lastUpdated)h+=`<div style="text-align:center;font-size:10px;color:var(--muted);margin-bottom:8px">Оновлено: ${lastUpdated.toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>`;
+  // Export
+  h+='<div class="export-row"><span style="color:var(--muted)">Експорт:</span>';
+  h+='<button class="exp-btn" style="color:var(--danger)" onclick="exportItems([\'exhausted\'])">Вибрано</button>';
+  h+='<button class="exp-btn" style="color:var(--orange)" onclick="exportItems([\'critical\'])">Критично</button>';
+  h+='<button class="exp-btn" style="color:var(--warn)" onclick="exportItems([\'warning\'])">Увага</button>';
+  h+='<button class="exp-btn" style="color:#fff" onclick="exportItems([\'exhausted\',\'critical\',\'warning\'])">Усі проблемні</button>';
+  h+='</div>';
+  // Sort
+  h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
+  for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Міс ↑"],["pct","% ↓"]])h+=`<button class="sort-btn${currentSort===k?" active":""}" onclick="currentSort='${k}';render()">${l}</button>`;
+  h+=`</div><span style="font-size:12px;color:var(--muted)">${items.length} поз.</span></div>`;
+  // Cards
+  if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
+  else items.forEach(d=>{
+    const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
+    const hasConflict=d.multi&&!d.chosen;
+    const mnn=d.t.length?d.t[0].mn:"";
+    const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
+    const mbT=s==="idle"?"Без руху":d.ml<=0?"Вичерпано":d.ml===999?"—":d.ml+" міс";
+    h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="expandedCard=expandedCard==='${esc(d.n).replace(/'/g,"\\'")}' ?null:'${esc(d.n).replace(/'/g,"\\'")}';render()">`;
+    h+=`<div class="card-head"><div class="card-top">`;
+    h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
+    h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q:"")}</div>`;
+    if(mnn)h+=`<div class="mnn-line">${hl(mnn,searchMode==="mnn"?q:"")}</div>`;
+    if(hasConflict)h+=`<div class="conflict-hint">⚡ ${d.multi.length} постачальники — оберіть</div>`;
+    if(d.chosen)h+=`<div class="chosen-hint">✓ ${esc(d.chosen)}</div>`;
+    h+=`</div><div class="card-qty"><div class="num">${fmt(d.dpq)}</div><div class="unit">${esc(d.du)}</div></div></div></div>`;
+    if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${d.pct}%</span></div>`;
+    // Detail
+    h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
+    h+=`<div class="detail-grid"><div class="mini-stat"><div class="lbl">Закуплено</div><div class="val">${fmt(d.dpq)} ${esc(d.du)}</div></div>`;
+    h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
+    h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
+    h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
+    if(d.multi){h+=`<div class="supplier-pick"><div class="title">⚡ Обрати постачальника:</div><div class="btns">`;
+      d.multi.forEach(sup=>{h+=`<button class="sup-btn${d.chosen===sup?" active":""}" onclick="event.stopPropagation();pickSupplier('${esc(d.n).replace(/'/g,"\\'")}','${esc(sup).replace(/'/g,"\\'")}')">${esc(sup)}</button>`});
+      h+=`</div></div>`}
+    h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
+    d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
+    if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
+    h+=`</div></div>`;
+  });
+  el.innerHTML=h;
+}
+
+function renderAgreements(el){
+  const q=getActiveSearch();
+  let agrs={};allTenders.forEach(t=>{const k=t.supplier+"|||"+t.contract;if(!agrs[k])agrs[k]={supplier:t.supplier,contract:t.contract,items:[]};agrs[k].items.push(t)});
+  let arr=Object.values(agrs);
+  if(q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);
+    if(searchMode==="name")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.commercial,w)));
+    else if(searchMode==="mnn")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.mnn,w)));
+    else if(searchMode==="supplier")arr=arr.filter(a=>multiMatch(a.supplier,w));
+    else if(searchMode==="contract")arr=arr.filter(a=>multiMatch(a.contract,w));
+  }
+  arr.sort((a,b)=>a.supplier.localeCompare(b.supplier,"uk"));
+  let h=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${arr.length} угод</div>`;
+  arr.forEach(a=>{
+    const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
+    const tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
+    h+=`<div class="agr-card${isE?" expanded":""}" onclick="expandedAgr=expandedAgr==='${k.replace(/'/g,"\\'")}'?null:'${k.replace(/'/g,"\\'")}';render()">`;
+    h+=`<div class="agr-sup">${hl(a.supplier,searchMode==="supplier"?q:"")}</div>`;
+    h+=`<div class="agr-con">${hl(a.contract,searchMode==="contract"?q:"")}</div>`;
+    h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
+    h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
+    a.items.forEach(it=>{
+      h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
+      h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
+      h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(it.unit)}</strong></div>`;
+      if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
+      h+=`</div>`;
+    });
+    h+=`</div></div>`;
+  });
+  el.innerHTML=h;
+}
+
+function renderConflicts(el){
+  const conflicts=allData.filter(d=>d.multi);
+  if(!conflicts.length){el.innerHTML='<div class="empty-state">Немає конфліктів</div>';return}
+  let h='<div class="conflict-banner">⚡ Ці препарати знайдено у кількох постачальників. Оберіть, на яку угоду рознести закупівлю.</div>';
+  conflicts.forEach(d=>{
+    h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
+    d.multi.forEach(sup=>{
+      const items=d.allM.filter(t=>t.s===sup);const isC=d.chosen===sup;
+      h+=`<div class="conflict-opt${isC?" chosen":""}" onclick="pickSupplier('${esc(d.n).replace(/'/g,"\\'")}','${esc(sup).replace(/'/g,"\\'")}')"><div><div class="name"${isC?' style="color:var(--accent)"':''}>${esc(sup)}</div><div class="info">${items.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">К-сть: ${items.map(t=>fmt(t.tq)+" "+esc(t.tu)).join(", ")}</div></div>${isC?'<span class="check">✓</span>':''}</div>`;
+    });
+    h+=`</div>`;
+  });
+  el.innerHTML=h;
+}
+
+// ═══════ INIT ═══════
+(function(){
+  const c=loadCache();
+  if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;
+    // Try to restore raw data for re-matching
+    showMain();fetchDriveBackground();
+  }
+})();
+</script>
+</body>
+</html>
