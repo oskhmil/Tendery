@@ -557,9 +557,9 @@ function renderAgreements(el){
     h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
     a.items.forEach(it=>{
       // Find matched purchase data
-      const pm=allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&dt.cn.substring(0,40)===it.commercial.substring(0,40)));
+      const pm=allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60)));
       let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit;
-      if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract);const pk=tc?tc.pk:1;const consRaw=pm.pq;const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const remRaw=tc?(tc.cq-consRaw):it.qty-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;consDisp=consInTU;remDisp=remInTU;pctDisp=pm.pct;if(pk>1)dispUnit=it.unit}
+      if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60));const pk=tc?tc.pk:1;const consRaw=pm.pq;const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const remRaw=tc?(tc.cq-consRaw):it.qty-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;consDisp=consInTU;remDisp=remInTU;pctDisp=pm.pct;if(pk>1)dispUnit=it.unit}
       h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
       h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
       h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
