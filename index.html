@@ -227,6 +227,12 @@ let currentFilter="all", currentSort="status";
 let expandedCard=null, expandedAgr=null;
 let purchasesRaw=null, tendersRaw=null;
 let lastUpdated=null;
+let showAllCards=false;
+function toggleFilter(k){
+  if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
+  else{showAllCards=false;currentFilter=currentFilter===k?"all":k}
+  render();
+}
 
 // ═══════ CACHE ═══════
 function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}}
@@ -321,7 +327,7 @@ function matchAll(purchases,tenders,ov={}){
     if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
     results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null});
   }
-  const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&tenders[i].commercial.slice(0,40)===t.cn.slice(0,40))used.add(i)}));
+  const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
   const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
   for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
   return results;
@@ -473,7 +479,7 @@ function renderMonitor(el){
   // Stats
   h+='<div class="stats-bar">';
   for(const[k,l]of[["all","Усі"],["exhausted","Вибрано"],["critical","Критично"],["warning","Увага"],["ok","Норма"],["idle","Без руху"],["none","Без угоди"]]){
-    h+=`<div class="stat-card${currentFilter===k?" active":""}" onclick="currentFilter=currentFilter==='${k}'?'all':'${k}';render()"><div class="stat-num" style="color:${SCOL[k]}">${counts[k]||0}</div><div class="stat-lbl">${l}</div></div>`;
+    h+=`<div class="stat-card${(k==='all'?(showAllCards&&currentFilter==='all'):currentFilter===k)?" active":""}" onclick="toggleFilter('${k}')"><div class="stat-num" style="color:${SCOL[k]}">${counts[k]||0}</div><div class="stat-lbl">${l}</div></div>`;
   }
   h+='</div>';
   // Updated
@@ -486,7 +492,7 @@ function renderMonitor(el){
   h+='<button class="exp-btn" style="color:#fff" onclick="exportItems([\'exhausted\',\'critical\',\'warning\'])">Усі проблемні</button>';
   h+='</div>';
   // Cards — only show when a filter is selected or search is active
-  const showCards = currentFilter !== "all" || !!getActiveSearch();
+  const showCards = (currentFilter !== "all") || showAllCards || !!getActiveSearch();
   if(showCards){
   h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
   for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Міс ↑"],["pct","% ↓"]])h+=`<button class="sort-btn${currentSort===k?" active":""}" onclick="currentSort='${k}';render()">${l}</button>`;
