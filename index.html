@@ -17,7 +17,8 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .top-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .logo{font-size:18px;font-weight:800;color:#fff;cursor:pointer}
 .logo-sub{font-size:10px;color:var(--muted);margin-top:1px}
-.dev-credit{font-size:14px;font-weight:800;color:var(--danger)}
+.dev-credit{font-size:14px;font-weight:800;background:linear-gradient(90deg,#4f8ef7,#38bdf8,#a78bfa,#f472b6,#4f8ef7);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shine 3s linear infinite}
+@keyframes shine{0%{background-position:0% center}100%{background-position:200% center}}
 .header-btns{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
 .hbtn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:5px 10px;font-size:12px;white-space:nowrap;transition:all .2s}
 .hbtn:hover{border-color:var(--accent);color:var(--accent)}
@@ -28,9 +29,9 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 
 /* Search */
 .search-wrap{position:relative;margin-top:10px}
-.search-wrap input{width:100%;background:#1e293b;border:1.5px solid var(--border);border-radius:12px;padding:11px 90px 11px 38px;color:#fff;font-size:15px;outline:none;transition:border .2s}
-.search-wrap input:focus{border-color:var(--accent)}
-.search-wrap input::placeholder{color:#64748b}
+.search-wrap input{width:100%;background:#2a3452;border:1.5px solid #4f6a8f;border-radius:12px;padding:11px 90px 11px 38px;color:#fff;font-size:15px;outline:none;transition:border .2s}
+.search-wrap input:focus{border-color:var(--accent);background:#334166}
+.search-wrap input::placeholder{color:#8899bb}
 .search-ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:16px}
 .pin-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:none}
 .mode-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
@@ -193,22 +194,20 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
       <div class="start-title">Тендер-монітор</div>
       <div class="dev-credit" style="font-size:18px;margin-bottom:6px">Developed by Ostap Khmil</div>
       <div class="start-sub">Моніторинг тендерних угод та закупівель</div>
-      <button class="big-btn" id="drive-btn" onclick="loadFromDrive(false)">☁️ Завантажити з Google Drive</button>
+      <button class="big-btn" id="drive-btn" onclick="loadFromDrive(false)">☁️ Завантажити актуальні дані</button>
       <div class="or-div">або завантажити файли вручну</div>
-      <div class="upload-zone" id="uz-p" onclick="document.getElementById('file-p').click()">
-        <input id="file-p" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'p')">
-        + 1. Закупівлі (з 1С)
-      </div>
-      <div class="upload-zone" id="uz-t" onclick="document.getElementById('file-t').click()">
-        <input id="file-t" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'t')">
-        + 2. Тендерні угоди
+      <div class="upload-zone" id="uz-manual" onclick="showManualFields()">📂 Завантажити .xlsx файли з пристрою</div>
+      <div id="manual-fields" class="hidden">
+        <div class="upload-zone" id="uz-p" onclick="event.stopPropagation();document.getElementById('file-p').click()">
+          <input id="file-p" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'p')">
+          + 1. Закупівлі (з 1С)
+        </div>
+        <div class="upload-zone" id="uz-t" onclick="event.stopPropagation();document.getElementById('file-t').click()">
+          <input id="file-t" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'t')">
+          + 2. Тендерні угоди
+        </div>
       </div>
       <div id="start-error"></div>
-      <div class="hint-box">
-        💡 Натисніть «Завантажити з Google Drive» — працює на ПК та телефоні.<br>
-        Або завантажте .xlsx файли вручну з комп'ютера.<br>
-        Дані кешуються у браузері.
-      </div>
     </div>
     <div id="loader"><div class="loader-ico"><span class="loader-spin">⟳</span></div><div id="loader-text">Завантаження...</div></div>
     <div id="main-screen" class="hidden"></div>
@@ -273,7 +272,7 @@ function parseTenders(buf){
 // ═══════ MATCHING ═══════
 const STOP=new Set("РОЗЧИН ДЛЯ ІНФУЗІЙ ТАБЛЕТКИ КАПСУЛИ ПОРОШОК СУСПЕНЗІЯ КОНЦЕНТРАТ ЛІОФІЛІЗАТ ВКРИТІ ПО МЛ МГ Р-Н ФЛАК АМП В У І ТА АБО ЛІОФ ПОР КРАПЛІ ОЧНІ ТАБ ЕМУЛЬС АЕРОЗОЛЬ КОНЦ СУСП КАП НАШКІРН НАШКІРНИЙ ОЧН РОЗЧ-К ПЕРЕНТЕРАЛЬНОГО ЗАСТОС".split(" "));
 function norm(s){return s.toUpperCase().trim().replace(/®/g,"").replace(/\u00a0/g," ").replace(/\u0060/g,"'").replace(/\u2019/g,"'").replace(/\s*-\s*/g,"-").replace(/\s+/g," ")}
-function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|%|МО|Г|Л|МГ\/МЛ)$/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("("))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
+function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|%|МО|Г|Л|МГ\/МЛ)$/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("(")||/^МГ\/МЛ$/i.test(c)||/^МКГ\/МЛ$/i.test(c))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
 function stemUk(w){if(w.length<=4)return w;for(const s of["ИНУ","ІНУ","ОНУ","АТУ","ЕТУ","ИНА","ІНА","ОМ","ІМ","ОЇ","ЕЙ","ІЙ","ОГО","ОМУ","ІВ","ІН","АМ","ЯМ","У","А","Е","І","И","Ю","Я","О"])if(w.endsWith(s)&&w.length-s.length>=4)return w.slice(0,-s.length);return w}
 function getForm(s){const u=s.toUpperCase(),f=new Set();if(/РОЗЧИН|Р-Н|Р\/Н|Д\/ІН|КОНЦ\.|КОНЦЕНТРАТ/.test(u))f.add("SOL");if(/ТАБЛ|ТАБ[\s.,]/.test(u))f.add("TAB");if(/КАПС/.test(u))f.add("CAP");if(/КРАПЛІ|КР\.ОЧН|ОЧНІ/.test(u))f.add("DRP");if(/СУПОЗИТОР/.test(u))f.add("SUP");if(/ПОРОШОК|ПОР[\s.,]|ПОР\//.test(u))f.add("PWD");if(/ЕМУЛЬС|ЕМУЛ/.test(u))f.add("EMU");if(/АЕРОЗОЛЬ/.test(u))f.add("AER");if(/СУСПЕНЗІЯ|СУСП/.test(u))f.add("SSP");if(/ІНФУЗІЙ|ІНФУЗ/.test(u))f.add("INF");if(/ІНГАЛЯЦІ/.test(u))f.add("INH");if(/ГРАНУЛИ|ГРАН/.test(u))f.add("GRN");if(/МАЗЬ/.test(u))f.add("OIN");return f}
 // Container type: syringe vs vial vs amp — these are physically different and must match
@@ -303,7 +302,10 @@ function matchAll(purchases,tenders,ov={}){
     // Pack-size filter: if purchase has №N and tender has №M and N≠M, filter out
     const pPk=extractPkStrict(p.name);
     if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStrict(tenders[i].commercial);return tPk===0||tPk===pPk});if(pkf.length>0)matched=pkf}
-    if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df;if(matched.length>1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf}}
+    // Dose filter
+    if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
+    // Volume filter — apply even for single match (200ml ≠ 100ml)
+    if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
     const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
     let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
     const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
@@ -369,6 +371,7 @@ function handleFile(file,type){
   reader.readAsArrayBuffer(file);
 }
 function showManualUpload(){showScreen("start")}
+function showManualFields(){document.getElementById("manual-fields").classList.remove("hidden");document.getElementById("uz-manual").classList.add("hidden")}
 
 // ═══════ OVERRIDE ═══════
 function pickSupplier(drugName,supplier){
@@ -541,10 +544,16 @@ function renderAgreements(el){
     h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
     h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
     a.items.forEach(it=>{
+      // Find matched purchase data
+      const pm=allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&dt.cn.substring(0,40)===it.commercial.substring(0,40)));
+      let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit;
+      if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract);const pk=tc?tc.pk:1;const consRaw=pm.pq;const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const remRaw=tc?(tc.cq-consRaw):it.qty-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;consDisp=consInTU;remDisp=remInTU;pctDisp=pm.pct;if(pk>1)dispUnit=it.unit}
       h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
       h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
-      h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(it.unit)}</strong></div>`;
+      h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
       if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
+      if(consDisp!=null){h+=`<div class="row"><span>Вибрано:</span><strong style="color:${remDisp<=0?"var(--danger)":"var(--green)"}">${fmt(consDisp)} (зал: ${fmt(remDisp)})</strong></div>`;if(pctDisp!=null)h+=`<div class="row"><span>Вибірка:</span><strong style="color:${pctDisp>=100?"var(--danger)":pctDisp>=80?"var(--warn)":"var(--green)"}">${pctDisp}%</strong></div>`}
+      else h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">Не знайдено в закупівлях</div>`;
       h+=`</div>`;
     });
     h+=`</div></div>`;
