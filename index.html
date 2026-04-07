@@ -246,7 +246,7 @@ function parsePurchases(buf){
   const drugs={};
   for(let i=10;i<rows.length;i++){
     const r=rows[i];if(!r||!r[0])continue;
-    const a=String(r[0]).trim(),d=r[3],f=r[5],g=r[6],h=r[7];
+    const a=String(r[0]).trim().replace(/\s+/g,' '),d=r[3],f=r[5],g=r[6],h=r[7];
     if(g&&!d&&!f)continue;
     if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
       if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
