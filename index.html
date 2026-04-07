@@ -485,11 +485,12 @@ function renderMonitor(el){
   h+='<button class="exp-btn" style="color:var(--warn)" onclick="exportItems([\'warning\'])">Увага</button>';
   h+='<button class="exp-btn" style="color:#fff" onclick="exportItems([\'exhausted\',\'critical\',\'warning\'])">Усі проблемні</button>';
   h+='</div>';
-  // Sort
+  // Cards — only show when a filter is selected or search is active
+  const showCards = currentFilter !== "all" || !!getActiveSearch();
+  if(showCards){
   h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
   for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Міс ↑"],["pct","% ↓"]])h+=`<button class="sort-btn${currentSort===k?" active":""}" onclick="currentSort='${k}';render()">${l}</button>`;
   h+=`</div><span style="font-size:12px;color:var(--muted)">${items.length} поз.</span></div>`;
-  // Cards
   if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
   else items.forEach(d=>{
     const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
@@ -520,6 +521,9 @@ function renderMonitor(el){
     if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
     h+=`</div></div>`;
   });
+  }else{
+    h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
+  }
   el.innerHTML=h;
 }
 
