@@ -220,7 +220,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v11";
+const CACHE_KEY = "tendertrack_v13";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -228,6 +228,7 @@ let currentView="monitor", searchMode="name", currentSearch="", pinnedSearch="";
 let currentFilter="all", currentSort="status";
 let expandedCard=null, expandedAgr=null;
 let purchasesRaw=null, tendersRaw=null;
+let parsedPurchases=null; // cached parsed purchases for re-matching
 let lastUpdated=null;
 let showAllCards=false;
 function toggleFilter(k){
@@ -237,8 +238,29 @@ function toggleFilter(k){
 }
 
 // ═══════ CACHE ═══════
-function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}}
-function loadCache(){try{const r=localStorage.getItem(CACHE_KEY);if(!r)return null;const d=JSON.parse(r);return d&&d.data&&d.tenders?d:null}catch{return null}}
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,overrides,ts:Date.now()}))}catch(e){
+  try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}
+}}
+function loadCache(){
+  try{
+    const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
+    const d=JSON.parse(r);
+    // Validate structure
+    if(!d||!Array.isArray(d.data)||!Array.isArray(d.tenders))return null;
+    if(!d.data.length||typeof d.data[0].n!=="string")return null;
+    if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
+    if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
+    return d;
+  }catch{return null}
+}
+// Clean overrides: remove entries that no longer have multiple suppliers
+function cleanOverrides(data,ov){
+  const valid={};
+  for(const d of data){
+    if(d.multi&&ov[d.n]&&d.multi.includes(ov[d.n]))valid[d.n]=ov[d.n];
+  }
+  return valid;
+}
 
 // ═══════ XLSX PARSING ═══════
 function parsePurchases(buf){
@@ -347,7 +369,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;showMain();fetchDriveBackground();return}}
+  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
   showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
   await fetchDriveBackground(true);
 }
@@ -356,8 +378,8 @@ async function fetchDriveBackground(showErr){
     const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()}),fetch(GDRIVE_T).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()})]);
     purchasesRaw=pB;tendersRaw=tB;
     const p=parsePurchases(pB);const t=parseTenders(tB);
-    allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
-    saveCache();showMain();
+    parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+    overrides=cleanOverrides(allData,overrides);saveCache();showMain();
   }catch(e){if(showErr){document.getElementById("start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("start")}}
 }
 function handleFile(file,type){
@@ -371,7 +393,8 @@ function handleFile(file,type){
         showLoader("Обробка файлів...");
         setTimeout(()=>{
           const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
-          allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();saveCache();showMain();
+          parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+          overrides=cleanOverrides(allData,overrides);saveCache();showMain();
         },50);
       }
     }catch(err){document.getElementById("start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>'}
@@ -386,11 +409,16 @@ function pickSupplier(drugName,supplier){
   overrides[drugName]=supplier;
   if(purchasesRaw&&tendersRaw){
     const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
-    allData=matchAll(p,t,overrides);saveCache();render();
-  }else{
-    // Recalc from cache
-    allData.forEach(d=>{if(d.n===drugName)d.chosen=supplier});
+    parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);
+    overrides=cleanOverrides(allData,overrides);
     saveCache();render();
+  }else if(parsedPurchases&&allTenders){
+    allData=matchAll(parsedPurchases,allTenders,overrides);
+    overrides=cleanOverrides(allData,overrides);
+    saveCache();render();
+  }else{
+    // Cannot re-match — force reload from Drive
+    loadFromDrive(true);
   }
 }
 
@@ -592,7 +620,7 @@ function renderConflicts(el){
 (function(){
   const c=loadCache();
   if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;
-    // Try to restore raw data for re-matching
+    if(c.purchases)parsedPurchases=c.purchases;
     showMain();fetchDriveBackground();
   }
 })();
