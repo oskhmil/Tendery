@@ -112,6 +112,12 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .supplier-pick .btns{display:flex;flex-wrap:wrap;gap:4px}
 .sup-btn{padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--muted);font-size:11px;cursor:pointer;transition:all .15s}
 .sup-btn.active{border-color:var(--accent);background:rgba(34,197,94,.18);color:var(--accent)}
+.alloc-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px}
+.alloc-row .sup-name{flex:1;min-width:0;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alloc-row .alloc-cap{color:var(--muted);font-size:10px;flex-shrink:0}
+.alloc-input{width:70px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px 6px;color:#fff;font-size:12px;text-align:right;outline:none}
+.alloc-input:focus{border-color:var(--accent)}
+.alloc-apply{padding:4px 12px;border-radius:6px;border:none;background:var(--accent);color:#fff;font-size:11px;font-weight:600;cursor:pointer;margin-top:4px}
 .tender-card{background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px;margin-top:6px;border-left:3px solid var(--accent)}
 .tender-card .sup{font-size:13px;font-weight:600;color:var(--accent)}
 .tender-card .con{font-size:11px;color:var(--muted);margin-top:2px}
@@ -220,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v15";
+const CACHE_KEY = "tendertrack_v16";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -257,7 +263,17 @@ function loadCache(){
 function cleanOverrides(data,ov){
   const valid={};
   for(const d of data){
-    if(d.multi&&ov[d.n]&&d.multi.includes(ov[d.n]))valid[d.n]=ov[d.n];
+    if(!d.multi)continue;
+    const entry=ov[d.n];
+    if(!entry)continue;
+    if(typeof entry==="string"){
+      if(d.multi.includes(entry))valid[d.n]=entry;
+    }else if(typeof entry==="object"){
+      // Keep allocation if at least one supplier still valid
+      const cleaned={};let hasAny=false;
+      for(const s of Object.keys(entry)){if(d.multi.includes(s)){cleaned[s]=entry[s];hasAny=true}}
+      if(hasAny)valid[d.n]=cleaned;
+    }
   }
   return valid;
 }
@@ -349,36 +365,50 @@ function matchAll(purchases,tenders,ov={}){
     const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
     let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
     const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
-    // Override = priority, not exclusive. Put chosen supplier first, rest follow by date
+    // Override can be: string (legacy priority) or object {supplier: qty} (allocation)
     let tInfo=allTI;
-    if(isMulti&&ov[p.name]){
-      const picked=ov[p.name];
-      const first=allTI.filter(t=>t.s===picked);
-      const rest=allTI.filter(t=>t.s!==picked);
+    const ovEntry=isMulti?ov[p.name]:null;
+    if(isMulti&&ovEntry&&typeof ovEntry==="object"){
+      // Quantity allocation mode: user specified how much from each supplier
+      // Keep all suppliers, consumed will be calculated per-supplier below
+    }else if(isMulti&&typeof ovEntry==="string"){
+      // Legacy priority mode: put chosen supplier first
+      const first=allTI.filter(t=>t.s===ovEntry);
+      const rest=allTI.filter(t=>t.s!==ovEntry);
       rest.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
       tInfo=[...first,...rest];
     }
     let consumed=p.qty;
-    // Cascade consumption: exhaust agreements one by one
-    if(tInfo.length>1){
-      if(!isMulti||!ov[p.name])tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
+    if(isMulti&&ovEntry&&typeof ovEntry==="object"){
+      // Allocation mode: show all suppliers that have allocation > 0 or have remaining
+      tInfo=allTI;
+      // consumed stays as p.qty — total purchased
+    }else if(tInfo.length>1){
+      // Cascade consumption
+      if(!isMulti||!ovEntry)tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
       let left=p.qty;const active=[];
       for(const t of tInfo){
         if(left<=0){active.push(t);continue}
-        if(left>=t.cq){left-=t.cq;/* fully consumed, skip */}
+        if(left>=t.cq){left-=t.cq;}
         else{consumed=left;active.push(t);left=0}
       }
       if(active.length>0)tInfo=active;
       else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
     }
-    const tq=tInfo.reduce((s,t)=>s+t.cq,0),rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
+    // Compute metrics
+    const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
+    const tq=tInfo.reduce((s,t)=>s+t.cq,0);
+    let totalAllocated=consumed;
+    if(isAlloc){totalAllocated=0;for(const s of Object.keys(ovEntry))totalAllocated+=ovEntry[s]||0;if(totalAllocated===0)totalAllocated=consumed;}
+    const effConsumed=isAlloc?totalAllocated:consumed;
+    const rem=tq>0?tq-effConsumed:0,pct=tq>0?Math.round(effConsumed/tq*1000)/10:0;
     const now=new Date();let earliest=[9999,1,1];tInfo.forEach(t=>{const d=cDate(t.c);if(d[0]<earliest[0]||(d[0]===earliest[0]&&(d[1]<earliest[1]||(d[1]===earliest[1]&&d[2]<earliest[2]))))earliest=d});
     const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
     const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
     const mr=p.qty>0?p.qty/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
-    let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
-    if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
-    results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null});
+    let du=p.unit,dpq=effConsumed,dtq=tq,drem=rem;
+    if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(effConsumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
+    results.push({n:p.name,u:p.unit,du,pq:effConsumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null,alloc:isAlloc?ovEntry:null});
   }
   const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
   const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
@@ -434,8 +464,17 @@ function showManualUpload(){showScreen("start")}
 function showManualFields(){document.getElementById("manual-fields").classList.remove("hidden");document.getElementById("uz-manual").classList.add("hidden")}
 
 // ═══════ OVERRIDE ═══════
+function setAllocation(drugName, allocObj){
+  // allocObj = {supplier: qty, ...} e.g. {"СТМ": 840, "Галич-Полімед": 0}
+  overrides[drugName]=allocObj;
+  _rematch();
+}
 function pickSupplier(drugName,supplier){
+  // Legacy: set as priority string
   overrides[drugName]=supplier;
+  _rematch();
+}
+function _rematch(){
   if(purchasesRaw&&tendersRaw){
     const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
     parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);
@@ -445,10 +484,25 @@ function pickSupplier(drugName,supplier){
     allData=matchAll(parsedPurchases,allTenders,overrides);
     overrides=cleanOverrides(allData,overrides);
     saveCache();render();
-  }else{
-    // Cannot re-match — force reload from Drive
-    loadFromDrive(true);
-  }
+  }else{loadFromDrive(true)}
+}
+function applyAllocation(drugName, suppliers){
+  const alloc={};
+  suppliers.forEach(sup=>{
+    const sid=esc(sup).replace(/'/g,"\\'");
+    const el=document.getElementById("alloc_"+drugName+"_"+sid);
+    alloc[sup]=el?parseInt(el.value)||0:0;
+  });
+  setAllocation(drugName,alloc);
+}
+function applyConflictAlloc(drugName, suppliers){
+  const alloc={};
+  suppliers.forEach(sup=>{
+    const sid=esc(sup).replace(/'/g,"\\'");
+    const el=document.getElementById("calloc_"+drugName+"_"+sid);
+    alloc[sup]=el?parseInt(el.value)||0:0;
+  });
+  setAllocation(drugName,alloc);
 }
 
 // ═══════ SCREENS ═══════
@@ -583,9 +637,18 @@ function renderMonitor(el){
     h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
     h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
     h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
-    if(d.multi){h+=`<div class="supplier-pick"><div class="title">⚡ Обрати постачальника:</div><div class="btns">`;
-      d.multi.forEach(sup=>{h+=`<button class="sup-btn${d.chosen===sup?" active":""}" onclick="event.stopPropagation();pickSupplier('${esc(d.n).replace(/'/g,"\\'")}','${esc(sup).replace(/'/g,"\\'")}')">${esc(sup)}</button>`});
-      h+=`</div></div>`}
+    if(d.multi){
+      const allocData=d.alloc||{};const dn=esc(d.n).replace(/'/g,"\\'");
+      h+=`<div class="supplier-pick"><div class="title">⚡ Розподілити по постачальниках (${esc(d.u)}):</div>`;
+      d.multi.forEach(sup=>{
+        const supItems=d.allM.filter(t=>t.s===sup);
+        const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
+        const curVal=allocData[sup]||0;
+        const sid=esc(sup).replace(/'/g,"\\'");
+        h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" id="alloc_${dn}_${sid}" onchange="event.stopPropagation()"><span class="alloc-cap">/ ${fmt(maxQty)}</span></div>`;
+      });
+      h+=`<button class="alloc-apply" onclick="event.stopPropagation();applyAllocation('${dn}',${JSON.stringify(d.multi).replace(/'/g,"\\'")})">Застосувати</button>`;
+      h+=`</div>`}
     h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
     d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
     if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
@@ -638,13 +701,18 @@ function renderAgreements(el){
 function renderConflicts(el){
   const conflicts=allData.filter(d=>d.multi);
   if(!conflicts.length){el.innerHTML='<div class="empty-state">Немає конфліктів</div>';return}
-  let h='<div class="conflict-banner">⚡ Ці препарати знайдено у кількох постачальників. Оберіть, на яку угоду рознести закупівлю.</div>';
+  let h='<div class="conflict-banner">⚡ Розподіліть закупівлі по постачальниках. Вкажіть кількість для кожного.</div>';
   conflicts.forEach(d=>{
+    const allocData=d.alloc||{};const dn=esc(d.n).replace(/'/g,"\\'");
     h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
     d.multi.forEach(sup=>{
-      const items=d.allM.filter(t=>t.s===sup);const isC=d.chosen===sup;
-      h+=`<div class="conflict-opt${isC?" chosen":""}" onclick="pickSupplier('${esc(d.n).replace(/'/g,"\\'")}','${esc(sup).replace(/'/g,"\\'")}')"><div><div class="name"${isC?' style="color:var(--accent)"':''}>${esc(sup)}</div><div class="info">${items.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">К-сть: ${items.map(t=>fmt(t.tq)+" "+esc(t.tu)).join(", ")}</div></div>${isC?'<span class="check">✓</span>':''}</div>`;
+      const supItems=d.allM.filter(t=>t.s===sup);
+      const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
+      const curVal=allocData[sup]||0;
+      const sid=esc(sup).replace(/'/g,"\\'");
+      h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" id="calloc_${dn}_${sid}" onclick="event.stopPropagation()"></div>`;
     });
+    h+=`<button class="alloc-apply" onclick="applyConflictAlloc('${dn}',${JSON.stringify(d.multi).replace(/'/g,"\\'")})">Застосувати</button>`;
     h+=`</div>`;
   });
   el.innerHTML=h;
