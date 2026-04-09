@@ -486,21 +486,22 @@ function _rematch(){
     saveCache();render();
   }else{loadFromDrive(true)}
 }
-function applyAllocation(drugName, suppliers){
+function applyAllocFromEl(btn){
+  // Walk up to find the parent container (supplier-pick or conflict-card)
+  const container=btn.parentElement;
+  const inputs=container.querySelectorAll(".alloc-input");
+  // Find drug name from the card
+  const card=container.closest(".card")||container.closest(".conflict-card");
+  let drugName="";
+  if(card){
+    const nameEl=card.querySelector(".drug-name")||card.querySelector(".conflict-drug");
+    if(nameEl)drugName=nameEl.textContent.trim();
+  }
+  if(!drugName)return;
   const alloc={};
-  suppliers.forEach(sup=>{
-    const sid=esc(sup).replace(/'/g,"\\'");
-    const el=document.getElementById("alloc_"+drugName+"_"+sid);
-    alloc[sup]=el?parseInt(el.value)||0:0;
-  });
-  setAllocation(drugName,alloc);
-}
-function applyConflictAlloc(drugName, suppliers){
-  const alloc={};
-  suppliers.forEach(sup=>{
-    const sid=esc(sup).replace(/'/g,"\\'");
-    const el=document.getElementById("calloc_"+drugName+"_"+sid);
-    alloc[sup]=el?parseInt(el.value)||0:0;
+  inputs.forEach(inp=>{
+    const sup=inp.getAttribute("data-sup");
+    if(sup)alloc[sup]=parseInt(inp.value)||0;
   });
   setAllocation(drugName,alloc);
 }
@@ -638,16 +639,15 @@ function renderMonitor(el){
     h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
     h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
     if(d.multi){
-      const allocData=d.alloc||{};const dn=esc(d.n).replace(/'/g,"\\'");
-      h+=`<div class="supplier-pick"><div class="title">⚡ Розподілити по постачальниках (${esc(d.u)}):</div>`;
-      d.multi.forEach(sup=>{
+      const allocData=d.alloc||{};const idx=results.indexOf?results.indexOf(d):0;
+      h+=`<div class="supplier-pick" data-drug-idx="${idx}"><div class="title">⚡ Розподілити по постачальниках (${esc(d.u)}):</div>`;
+      d.multi.forEach((sup,si)=>{
         const supItems=d.allM.filter(t=>t.s===sup);
         const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
         const curVal=allocData[sup]||0;
-        const sid=esc(sup).replace(/'/g,"\\'");
-        h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" id="alloc_${dn}_${sid}" onchange="event.stopPropagation()"><span class="alloc-cap">/ ${fmt(maxQty)}</span></div>`;
+        h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" data-sup="${esc(sup)}" onchange="event.stopPropagation()" onclick="event.stopPropagation()"><span class="alloc-cap">/ ${fmt(maxQty)}</span></div>`;
       });
-      h+=`<button class="alloc-apply" onclick="event.stopPropagation();applyAllocation('${dn}',${JSON.stringify(d.multi).replace(/'/g,"\\'")})">Застосувати</button>`;
+      h+=`<button class="alloc-apply" onclick="event.stopPropagation();applyAllocFromEl(this)">Застосувати</button>`;
       h+=`</div>`}
     h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
     d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
@@ -702,17 +702,16 @@ function renderConflicts(el){
   const conflicts=allData.filter(d=>d.multi);
   if(!conflicts.length){el.innerHTML='<div class="empty-state">Немає конфліктів</div>';return}
   let h='<div class="conflict-banner">⚡ Розподіліть закупівлі по постачальниках. Вкажіть кількість для кожного.</div>';
-  conflicts.forEach(d=>{
-    const allocData=d.alloc||{};const dn=esc(d.n).replace(/'/g,"\\'");
-    h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
+  conflicts.forEach((d,ci)=>{
+    const allocData=d.alloc||{};
+    h+=`<div class="conflict-card" data-cidx="${ci}"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
     d.multi.forEach(sup=>{
       const supItems=d.allM.filter(t=>t.s===sup);
       const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
       const curVal=allocData[sup]||0;
-      const sid=esc(sup).replace(/'/g,"\\'");
-      h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" id="calloc_${dn}_${sid}" onclick="event.stopPropagation()"></div>`;
+      h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" data-sup="${esc(sup)}" onclick="event.stopPropagation()"></div>`;
     });
-    h+=`<button class="alloc-apply" onclick="applyConflictAlloc('${dn}',${JSON.stringify(d.multi).replace(/'/g,"\\'")})">Застосувати</button>`;
+    h+=`<button class="alloc-apply" onclick="applyAllocFromEl(this)">Застосувати</button>`;
     h+=`</div>`;
   });
   el.innerHTML=h;
