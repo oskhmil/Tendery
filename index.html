@@ -220,7 +220,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v14";
+const CACHE_KEY = "tendertrack_v15";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -349,9 +349,28 @@ function matchAll(purchases,tenders,ov={}){
     const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
     let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
     const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
-    let tInfo=allTI;if(isMulti&&ov[p.name]){const f=allTI.filter(t=>t.s===ov[p.name]);if(f.length)tInfo=f}
+    // Override = priority, not exclusive. Put chosen supplier first, rest follow by date
+    let tInfo=allTI;
+    if(isMulti&&ov[p.name]){
+      const picked=ov[p.name];
+      const first=allTI.filter(t=>t.s===picked);
+      const rest=allTI.filter(t=>t.s!==picked);
+      rest.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
+      tInfo=[...first,...rest];
+    }
     let consumed=p.qty;
-    if(tInfo.length>1){tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});let left=p.qty;const active=[];for(const t of tInfo){if(left>=t.cq)left-=t.cq;else{if(!active.length)consumed=left;active.push(t);left=0}}if(active.length>0)tInfo=active;else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}}
+    // Cascade consumption: exhaust agreements one by one
+    if(tInfo.length>1){
+      if(!isMulti||!ov[p.name])tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
+      let left=p.qty;const active=[];
+      for(const t of tInfo){
+        if(left<=0){active.push(t);continue}
+        if(left>=t.cq){left-=t.cq;/* fully consumed, skip */}
+        else{consumed=left;active.push(t);left=0}
+      }
+      if(active.length>0)tInfo=active;
+      else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
+    }
     const tq=tInfo.reduce((s,t)=>s+t.cq,0),rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
     const now=new Date();let earliest=[9999,1,1];tInfo.forEach(t=>{const d=cDate(t.c);if(d[0]<earliest[0]||(d[0]===earliest[0]&&(d[1]<earliest[1]||(d[1]===earliest[1]&&d[2]<earliest[2]))))earliest=d});
     const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
