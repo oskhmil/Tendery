@@ -256,61 +256,34 @@ function saveCache(){
   }
 }
 function loadCache(){
-  let backupOv={};
   try{
-    const ovb=localStorage.getItem(CACHE_KEY+"_ov");
-    if(ovb){
-      const parsedOv=JSON.parse(ovb);
-      if(parsedOv&&typeof parsedOv==="object")backupOv=parsedOv;
-    }
-  }catch{}
-
-  try{
-    const r=localStorage.getItem(CACHE_KEY);
-    if(!r){
-      if(Object.keys(backupOv).length){
-        return {data:[],tenders:[],purchases:null,overrides:backupOv,ts:null};
-      }
-      return null;
-    }
-
+    const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
     const d=JSON.parse(r);
+    // Validate structure
     if(!d||!Array.isArray(d.data)||!Array.isArray(d.tenders))return null;
-    if(d.data.length&&typeof d.data[0].n!=="string")return null;
-    if(d.tenders.length&&typeof d.tenders[0].supplier!=="string")return null;
+    if(!d.data.length||typeof d.data[0].n!=="string")return null;
+    if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
     if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
-
-    // Always prefer dedicated overrides backup: it is smaller and more reliable.
-    if(Object.keys(backupOv).length)d.overrides=backupOv;
-    else if(!d.overrides||typeof d.overrides!=="object")d.overrides={};
-
-    return d;
-  }catch{
-    if(Object.keys(backupOv).length){
-      return {data:[],tenders:[],purchases:null,overrides:backupOv,ts:null};
+    // Restore overrides from backup if missing
+    if(!d.overrides||!Object.keys(d.overrides).length){
+      try{const ovb=localStorage.getItem(CACHE_KEY+"_ov");if(ovb)d.overrides=JSON.parse(ovb)}catch{}
     }
-    return null;
-  }
+    return d;
+  }catch{return null}
 }
 // Clean overrides: remove entries that no longer have multiple suppliers
 function cleanOverrides(data,ov){
   const valid={};
-
-  // Keep allocation objects by key even if matcher temporarily stops seeing multi.
-  for(const [drugName,entry] of Object.entries(ov||{})){
+  for(const d of data){
+    if(!d.multi)continue;
+    const entry=ov[d.n];
     if(!entry)continue;
-
-    if(typeof entry==="object"){
-      valid[drugName]=entry;
-      continue;
-    }
-
-    const d=data.find(x=>x.n===drugName);
-    if(typeof entry==="string"&&d&&d.multi&&d.multi.includes(entry)){
-      valid[drugName]=entry;
+    if(typeof entry==="string"){
+      if(d.multi.includes(entry))valid[d.n]=entry;
+    }else if(typeof entry==="object"){
+      valid[d.n]=entry; // allocation — don't touch, user set it explicitly
     }
   }
-
   return valid;
 }
 
@@ -493,18 +466,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-  if(!isRefresh){
-    const c=loadCache();
-    if(c){
-      overrides=c.overrides||{};
-      lastUpdated=c.ts?new Date(c.ts):null;
-      if(Array.isArray(c.data)&&Array.isArray(c.tenders)&&c.data.length&&c.tenders.length){
-        allData=c.data;allTenders=c.tenders;
-        if(c.purchases)parsedPurchases=c.purchases;
-        showMain();fetchDriveBackground();return;
-      }
-    }
-  }
+  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
   showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
   await fetchDriveBackground(true);
 }
@@ -800,17 +762,9 @@ function renderConflicts(el){
 // ═══════ INIT ═══════
 (function(){
   const c=loadCache();
-  if(c){
-    overrides=c.overrides||{};
-    lastUpdated=c.ts?new Date(c.ts):null;
-    if(Array.isArray(c.data)&&Array.isArray(c.tenders)&&c.data.length&&c.tenders.length){
-      allData=c.data;allTenders=c.tenders;
-      if(c.purchases)parsedPurchases=c.purchases;
-      showMain();
-    }else{
-      showLoader("Завантажуємо з Google Drive...");
-    }
-    fetchDriveBackground();
+  if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;
+    if(c.purchases)parsedPurchases=c.purchases;
+    showMain();fetchDriveBackground();
   }
 })();
 </script>
