@@ -226,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v18";
+const CACHE_KEY = "tendertrack_v19";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -244,9 +244,17 @@ function toggleFilter(k){
 }
 
 // ═══════ CACHE ═══════
-function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,overrides,ts:Date.now()}))}catch(e){
-  try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}
-}}
+function saveCache(){
+  // Always save overrides separately (small, reliable)
+  try{localStorage.setItem(CACHE_KEY+"_ov",JSON.stringify(overrides))}catch{}
+  try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,overrides,ts:Date.now()}))}catch(e){
+    console.warn("Cache full, saving without purchases",e);
+    try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch(e2){
+      console.warn("Cache still full, saving minimal",e2);
+      try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}
+    }
+  }
+}
 function loadCache(){
   try{
     const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
@@ -256,6 +264,10 @@ function loadCache(){
     if(!d.data.length||typeof d.data[0].n!=="string")return null;
     if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
     if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
+    // Restore overrides from backup if missing
+    if(!d.overrides||!Object.keys(d.overrides).length){
+      try{const ovb=localStorage.getItem(CACHE_KEY+"_ov");if(ovb)d.overrides=JSON.parse(ovb)}catch{}
+    }
     return d;
   }catch{return null}
 }
@@ -279,6 +291,9 @@ function cleanOverrides(data,ov){
 }
 
 // ═══════ XLSX PARSING ═══════
+// Known dose errors in 1С data: {pattern: replacement}
+const DOSE_FIXES={"10мг/мл":"0,1мг/мл"};
+function fixKnownDoses(name){let n=name;for(const[from,to]of Object.entries(DOSE_FIXES))n=n.replace(from,to);return n}
 function parsePurchases(buf){
   const wb=XLSX.read(buf,{type:"array"});
   const ws=wb.Sheets[wb.SheetNames[0]];
@@ -291,7 +306,7 @@ function parsePurchases(buf){
   const drugs={};
   for(let i=10;i<rows.length;i++){
     const r=rows[i];if(!r||!r[0])continue;
-    const a=String(r[0]).trim().replace(/\s+/g,' '),d=r[3],f=r[5],g=r[6],h=r[7];
+    const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=r[3],f=r[5],g=r[6],h=r[7];
     if(g&&!d&&!f)continue;
     if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
       if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
