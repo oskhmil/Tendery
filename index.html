@@ -226,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v20";
+const CACHE_KEY = "tendertrack_v21";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -289,7 +289,10 @@ function cleanOverrides(data,ov){
 
 // ═══════ XLSX PARSING ═══════
 // Known dose errors in 1С data: [{match: regex, from: str, to: str}]
-const DOSE_FIXES=[{match:/ОКТРЕОТИД/i,from:"10мг/мл",to:"0,1мг/мл"}];
+const DOSE_FIXES=[
+  {match:/ОКТРЕОТИД/i,from:"10мг/мл",to:"0,1мг/мл"},
+  {match:/ОКТРЕОТИД/i,from:"0,01%",to:"0,1мг/мл"}
+];
 function fixKnownDoses(name){let n=name;for(const f of DOSE_FIXES)if(f.match.test(n))n=n.replace(f.from,f.to);return n}
 function parsePurchases(buf){
   const wb=XLSX.read(buf,{type:"array"});
