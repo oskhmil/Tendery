@@ -226,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v19";
+const CACHE_KEY = "tendertrack_v20";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -281,19 +281,16 @@ function cleanOverrides(data,ov){
     if(typeof entry==="string"){
       if(d.multi.includes(entry))valid[d.n]=entry;
     }else if(typeof entry==="object"){
-      // Keep allocation if at least one supplier still valid
-      const cleaned={};let hasAny=false;
-      for(const s of Object.keys(entry)){if(d.multi.includes(s)){cleaned[s]=entry[s];hasAny=true}}
-      if(hasAny)valid[d.n]=cleaned;
+      valid[d.n]=entry; // allocation — don't touch, user set it explicitly
     }
   }
   return valid;
 }
 
 // ═══════ XLSX PARSING ═══════
-// Known dose errors in 1С data: {pattern: replacement}
-const DOSE_FIXES={"10мг/мл":"0,1мг/мл"};
-function fixKnownDoses(name){let n=name;for(const[from,to]of Object.entries(DOSE_FIXES))n=n.replace(from,to);return n}
+// Known dose errors in 1С data: [{match: regex, from: str, to: str}]
+const DOSE_FIXES=[{match:/ОКТРЕОТИД/i,from:"10мг/мл",to:"0,1мг/мл"}];
+function fixKnownDoses(name){let n=name;for(const f of DOSE_FIXES)if(f.match.test(n))n=n.replace(f.from,f.to);return n}
 function parsePurchases(buf){
   const wb=XLSX.read(buf,{type:"array"});
   const ws=wb.Sheets[wb.SheetNames[0]];
