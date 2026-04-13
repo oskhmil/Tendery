@@ -264,10 +264,14 @@ function loadCache(){
     if(!d.data.length||typeof d.data[0].n!=="string")return null;
     if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
     if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
-    // Restore overrides from backup if missing
-    if(!d.overrides||!Object.keys(d.overrides).length){
-      try{const ovb=localStorage.getItem(CACHE_KEY+"_ov");if(ovb)d.overrides=JSON.parse(ovb)}catch{}
-    }
+    // Always prefer the dedicated overrides backup: it is smaller and more reliable.
+    try{
+      const ovb=localStorage.getItem(CACHE_KEY+"_ov");
+      if(ovb){
+        const parsedOv=JSON.parse(ovb);
+        if(parsedOv&&typeof parsedOv==="object")d.overrides=parsedOv;
+      }
+    }catch{}
     return d;
   }catch{return null}
 }
@@ -275,13 +279,12 @@ function loadCache(){
 function cleanOverrides(data,ov){
   const valid={};
   for(const d of data){
-    if(!d.multi)continue;
     const entry=ov[d.n];
     if(!entry)continue;
     if(typeof entry==="string"){
-      if(d.multi.includes(entry))valid[d.n]=entry;
+      if(d.multi&&d.multi.includes(entry))valid[d.n]=entry;
     }else if(typeof entry==="object"){
-      valid[d.n]=entry; // allocation — don't touch, user set it explicitly
+      valid[d.n]=entry; // allocation — keep even if matcher temporarily stops seeing multi
     }
   }
   return valid;
