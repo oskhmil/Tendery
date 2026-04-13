@@ -226,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v16";
+const CACHE_KEY = "tendertrack_v17";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -487,21 +487,25 @@ function _rematch(){
   }else{loadFromDrive(true)}
 }
 function applyAllocFromEl(btn){
-  // Walk up to find the parent container (supplier-pick or conflict-card)
   const container=btn.parentElement;
   const inputs=container.querySelectorAll(".alloc-input");
-  // Find drug name from the card
-  const card=container.closest(".card")||container.closest(".conflict-card");
-  let drugName="";
-  if(card){
-    const nameEl=card.querySelector(".drug-name")||card.querySelector(".conflict-drug");
-    if(nameEl)drugName=nameEl.textContent.trim();
+  // Get drug name from data attribute (safe) or from card heading (fallback)
+  let drugName=container.getAttribute("data-drug")||"";
+  if(!drugName){
+    const card=container.closest(".card")||container.closest(".conflict-card");
+    if(card){
+      const pick=card.querySelector("[data-drug]");
+      if(pick)drugName=pick.getAttribute("data-drug");
+      if(!drugName){const ne=card.querySelector(".drug-name")||card.querySelector(".conflict-drug");if(ne)drugName=ne.textContent.trim()}
+    }
   }
+  // Decode HTML entities
+  if(drugName){const tmp=document.createElement("span");tmp.innerHTML=drugName;drugName=tmp.textContent}
   if(!drugName)return;
   const alloc={};
   inputs.forEach(inp=>{
-    const sup=inp.getAttribute("data-sup");
-    if(sup)alloc[sup]=parseInt(inp.value)||0;
+    let sup=inp.getAttribute("data-sup");
+    if(sup){const tmp=document.createElement("span");tmp.innerHTML=sup;sup=tmp.textContent;alloc[sup]=parseInt(inp.value)||0}
   });
   setAllocation(drugName,alloc);
 }
@@ -639,8 +643,8 @@ function renderMonitor(el){
     h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
     h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
     if(d.multi){
-      const allocData=d.alloc||{};const idx=results.indexOf?results.indexOf(d):0;
-      h+=`<div class="supplier-pick" data-drug-idx="${idx}"><div class="title">⚡ Розподілити по постачальниках (${esc(d.u)}):</div>`;
+      const allocData=d.alloc||{};
+      h+=`<div class="supplier-pick" data-drug="${esc(d.n)}"><div class="title">⚡ Розподілити по постачальниках (${esc(d.u)}):</div>`;
       d.multi.forEach((sup,si)=>{
         const supItems=d.allM.filter(t=>t.s===sup);
         const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
@@ -704,7 +708,7 @@ function renderConflicts(el){
   let h='<div class="conflict-banner">⚡ Розподіліть закупівлі по постачальниках. Вкажіть кількість для кожного.</div>';
   conflicts.forEach((d,ci)=>{
     const allocData=d.alloc||{};
-    h+=`<div class="conflict-card" data-cidx="${ci}"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
+    h+=`<div class="conflict-card" data-drug="${esc(d.n)}"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
     d.multi.forEach(sup=>{
       const supItems=d.allM.filter(t=>t.s===sup);
       const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
