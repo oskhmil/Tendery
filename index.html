@@ -226,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v17";
+const CACHE_KEY = "tendertrack_v18";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -397,18 +397,44 @@ function matchAll(purchases,tenders,ov={}){
     }
     // Compute metrics
     const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
+    if(isAlloc){
+      // Split into separate results per supplier
+      for(const sup of Object.keys(ovEntry)){
+        const supQty=ovEntry[sup]||0;
+        const supTenders=allTI.filter(t=>t.s===sup);
+        if(!supTenders.length)continue;
+        const stq=supTenders.reduce((s,t)=>s+t.cq,0);
+        const srem=stq>0?stq-supQty:0;
+        const spct=stq>0?Math.round(supQty/stq*1000)/10:0;
+        const sNow=new Date();let sEarliest=[9999,1,1];supTenders.forEach(t=>{const dd=cDate(t.c);if(dd[0]<sEarliest[0]||(dd[0]===sEarliest[0]&&(dd[1]<sEarliest[1]||(dd[1]===sEarliest[1]&&dd[2]<sEarliest[2]))))sEarliest=dd});
+        const scs=sEarliest[0]<9999?new Date(sEarliest[0],sEarliest[1]-1,sEarliest[2]):null;
+        const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
+        const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
+        let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
+        if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
+        results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
+      }
+      // Also add suppliers with 0 allocation that have capacity (for display)
+      for(const sup of uSup){
+        if(ovEntry[sup]!==undefined)continue;
+        const supTenders=allTI.filter(t=>t.s===sup);
+        if(!supTenders.length)continue;
+        const stq=supTenders.reduce((s,t)=>s+t.cq,0);
+        let sdu=p.unit,sdtq=stq;
+        if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
+        results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
+      }
+    }else{
     const tq=tInfo.reduce((s,t)=>s+t.cq,0);
-    let totalAllocated=consumed;
-    if(isAlloc){totalAllocated=0;for(const s of Object.keys(ovEntry))totalAllocated+=ovEntry[s]||0;if(totalAllocated===0)totalAllocated=consumed;}
-    const effConsumed=isAlloc?totalAllocated:consumed;
-    const rem=tq>0?tq-effConsumed:0,pct=tq>0?Math.round(effConsumed/tq*1000)/10:0;
+    const rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
     const now=new Date();let earliest=[9999,1,1];tInfo.forEach(t=>{const d=cDate(t.c);if(d[0]<earliest[0]||(d[0]===earliest[0]&&(d[1]<earliest[1]||(d[1]===earliest[1]&&d[2]<earliest[2]))))earliest=d});
     const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
     const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
     const mr=p.qty>0?p.qty/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
-    let du=p.unit,dpq=effConsumed,dtq=tq,drem=rem;
-    if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(effConsumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
-    results.push({n:p.name,u:p.unit,du,pq:effConsumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null,alloc:isAlloc?ovEntry:null});
+    let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
+    if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
+    results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null,alloc:null});
+    }
   }
   const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
   const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
@@ -489,23 +515,23 @@ function _rematch(){
 function applyAllocFromEl(btn){
   const container=btn.parentElement;
   const inputs=container.querySelectorAll(".alloc-input");
-  // Get drug name from data attribute (safe) or from card heading (fallback)
-  let drugName=container.getAttribute("data-drug")||"";
-  if(!drugName){
+  // Get drug name: decode HTML entities from data-drug attribute
+  let drugRaw=container.getAttribute("data-drug")||"";
+  if(!drugRaw){
     const card=container.closest(".card")||container.closest(".conflict-card");
-    if(card){
-      const pick=card.querySelector("[data-drug]");
-      if(pick)drugName=pick.getAttribute("data-drug");
-      if(!drugName){const ne=card.querySelector(".drug-name")||card.querySelector(".conflict-drug");if(ne)drugName=ne.textContent.trim()}
-    }
+    if(card)drugRaw=card.getAttribute("data-drug")||"";
   }
-  // Decode HTML entities
-  if(drugName){const tmp=document.createElement("span");tmp.innerHTML=drugName;drugName=tmp.textContent}
+  // Decode entities: &amp; → &, &lt; → <, etc
+  const dec=document.createElement("textarea");
+  dec.innerHTML=drugRaw;
+  const drugName=dec.value;
   if(!drugName)return;
   const alloc={};
   inputs.forEach(inp=>{
-    let sup=inp.getAttribute("data-sup");
-    if(sup){const tmp=document.createElement("span");tmp.innerHTML=sup;sup=tmp.textContent;alloc[sup]=parseInt(inp.value)||0}
+    const supRaw=inp.getAttribute("data-sup")||"";
+    dec.innerHTML=supRaw;
+    const sup=dec.value;
+    if(sup)alloc[sup]=parseInt(inp.value)||0;
   });
   setAllocation(drugName,alloc);
 }
@@ -572,7 +598,7 @@ function exportItems(statuses){
 
 // ═══════ RENDER ═══════
 function render(){
-  const mc=allData.filter(d=>d.multi&&!d.chosen).length;
+  const mc=allData.filter(d=>d.multi&&!d.alloc&&!d.chosen).length;
   const cBtn=document.getElementById("btn-conflicts");
   cBtn.classList.toggle("hidden",mc===0);document.getElementById("conflict-count").textContent=mc;
   updateNavBtns();
@@ -623,7 +649,7 @@ function renderMonitor(el){
   if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
   else items.forEach(d=>{
     const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
-    const hasConflict=d.multi&&!d.chosen;
+    const hasConflict=d.multi&&!d.alloc&&!d.chosen;
     const mnn=d.t.length?d.t[0].mn:"";
     const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
     const mbT=s==="idle"?"Без руху":d.ml<=0?"Вичерпано":d.ml===999?"—":d.ml+" міс";
@@ -703,7 +729,7 @@ function renderAgreements(el){
 }
 
 function renderConflicts(el){
-  const conflicts=allData.filter(d=>d.multi);
+  const conflicts=allData.filter(d=>d.multi&&!d.alloc);
   if(!conflicts.length){el.innerHTML='<div class="empty-state">Немає конфліктів</div>';return}
   let h='<div class="conflict-banner">⚡ Розподіліть закупівлі по постачальниках. Вкажіть кількість для кожного.</div>';
   conflicts.forEach((d,ci)=>{
