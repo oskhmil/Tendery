@@ -226,7 +226,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v21";
+const CACHE_KEY = "tendertrack_v22";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -245,46 +245,21 @@ function toggleFilter(k){
 
 // ═══════ CACHE ═══════
 function saveCache(){
-  // Always save overrides separately (small, reliable)
-  try{localStorage.setItem(CACHE_KEY+"_ov",JSON.stringify(overrides))}catch{}
-  try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,overrides,ts:Date.now()}))}catch(e){
+  try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,ts:Date.now()}))}catch(e){
     console.warn("Cache full, saving without purchases",e);
-    try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch(e2){
-      console.warn("Cache still full, saving minimal",e2);
-      try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,overrides,ts:Date.now()}))}catch{}
-    }
+    try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,ts:Date.now()}))}catch{}
   }
 }
 function loadCache(){
   try{
     const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
     const d=JSON.parse(r);
-    // Validate structure
     if(!d||!Array.isArray(d.data)||!Array.isArray(d.tenders))return null;
     if(!d.data.length||typeof d.data[0].n!=="string")return null;
     if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
     if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
-    // Restore overrides from backup if missing
-    if(!d.overrides||!Object.keys(d.overrides).length){
-      try{const ovb=localStorage.getItem(CACHE_KEY+"_ov");if(ovb)d.overrides=JSON.parse(ovb)}catch{}
-    }
     return d;
   }catch{return null}
-}
-// Clean overrides: remove entries that no longer have multiple suppliers
-function cleanOverrides(data,ov){
-  const valid={};
-  for(const d of data){
-    if(!d.multi)continue;
-    const entry=ov[d.n];
-    if(!entry)continue;
-    if(typeof entry==="string"){
-      if(d.multi.includes(entry))valid[d.n]=entry;
-    }else if(typeof entry==="object"){
-      valid[d.n]=entry; // allocation — don't touch, user set it explicitly
-    }
-  }
-  return valid;
 }
 
 // ═══════ XLSX PARSING ═══════
@@ -325,6 +300,7 @@ function parseTenders(buf){
   const tenders=[];
   let sheetsWithContract=0;
   for(const sn of wb.SheetNames){
+    if(sn==="Розподіл")continue; // skip allocation sheet
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});let contract=null;
     for(const r of rows){if(!r)continue;
       const[a,b,c,d,eR,fv,gv]=[r[0],r[1],r[2],r[3],r[4],r[5],r[6]];
@@ -338,6 +314,40 @@ function parseTenders(buf){
   if(!sheetsWithContract)throw new Error("Файл тендерів: не знайдено жодного договору. Очікуються листи з постачальниками та рядки 'Договір...'.");
   if(!tenders.length)throw new Error("Файл тендерів: не знайдено жодної позиції. Перевірте формат файлу.");
   return tenders;
+}
+// Parse "Розподіл" sheet → {drugName: {supplier: qty, ...}}
+// Supplier names are matched fuzzy against actual tender sheet names
+function parseAllocations(buf){
+  const wb=XLSX.read(buf,{type:"array"});
+  const sn=wb.SheetNames.find(s=>s==="Розподіл");
+  if(!sn)return{};
+  // Build list of actual supplier names (sheet names minus Розподіл)
+  const supNames=wb.SheetNames.filter(s=>s!=="Розподіл");
+  function matchSup(input){
+    const inp=input.toLowerCase();
+    // Exact match first
+    const exact=supNames.find(s=>s.toLowerCase()===inp);
+    if(exact)return exact;
+    // Sheet name is substring of input (e.g. "СТМ" in "СТМ-Фарм")
+    const partial=supNames.find(s=>inp.includes(s.toLowerCase()));
+    if(partial)return partial;
+    // Input is substring of sheet name
+    const partial2=supNames.find(s=>s.toLowerCase().includes(inp));
+    if(partial2)return partial2;
+    return input; // fallback: use as-is
+  }
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
+  const alloc={};
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i];if(!r||!r[0]||!r[1])continue;
+    const name=String(r[0]).trim().replace(/\s+/g,' ');
+    const supRaw=String(r[1]).trim();
+    const sup=matchSup(supRaw);
+    const qty=typeof r[2]==="number"?r[2]:(parseInt(String(r[2]))||0);
+    if(!alloc[name])alloc[name]={};
+    alloc[name][sup]=qty;
+  }
+  return alloc;
 }
 
 // ═══════ MATCHING ═══════
@@ -469,7 +479,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
+  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
   showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
   await fetchDriveBackground(true);
 }
@@ -478,8 +488,9 @@ async function fetchDriveBackground(showErr){
     const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()}),fetch(GDRIVE_T).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()})]);
     purchasesRaw=pB;tendersRaw=tB;
     const p=parsePurchases(pB);const t=parseTenders(tB);
+    overrides=parseAllocations(tB);
     parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
-    overrides=cleanOverrides(allData,overrides);saveCache();showMain();
+    saveCache();showMain();
   }catch(e){if(showErr){document.getElementById("start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("start")}}
 }
 function handleFile(file,type){
@@ -493,8 +504,9 @@ function handleFile(file,type){
         showLoader("Обробка файлів...");
         setTimeout(()=>{
           const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
+          overrides=parseAllocations(tendersRaw);
           parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
-          overrides=cleanOverrides(allData,overrides);saveCache();showMain();
+          saveCache();showMain();
         },50);
       }
     }catch(err){document.getElementById("start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>'}
@@ -503,53 +515,6 @@ function handleFile(file,type){
 }
 function showManualUpload(){showScreen("start")}
 function showManualFields(){document.getElementById("manual-fields").classList.remove("hidden");document.getElementById("uz-manual").classList.add("hidden")}
-
-// ═══════ OVERRIDE ═══════
-function setAllocation(drugName, allocObj){
-  // allocObj = {supplier: qty, ...} e.g. {"СТМ": 840, "Галич-Полімед": 0}
-  overrides[drugName]=allocObj;
-  _rematch();
-}
-function pickSupplier(drugName,supplier){
-  // Legacy: set as priority string
-  overrides[drugName]=supplier;
-  _rematch();
-}
-function _rematch(){
-  if(purchasesRaw&&tendersRaw){
-    const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
-    parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);
-    overrides=cleanOverrides(allData,overrides);
-    saveCache();render();
-  }else if(parsedPurchases&&allTenders){
-    allData=matchAll(parsedPurchases,allTenders,overrides);
-    overrides=cleanOverrides(allData,overrides);
-    saveCache();render();
-  }else{loadFromDrive(true)}
-}
-function applyAllocFromEl(btn){
-  const container=btn.parentElement;
-  const inputs=container.querySelectorAll(".alloc-input");
-  // Get drug name: decode HTML entities from data-drug attribute
-  let drugRaw=container.getAttribute("data-drug")||"";
-  if(!drugRaw){
-    const card=container.closest(".card")||container.closest(".conflict-card");
-    if(card)drugRaw=card.getAttribute("data-drug")||"";
-  }
-  // Decode entities: &amp; → &, &lt; → <, etc
-  const dec=document.createElement("textarea");
-  dec.innerHTML=drugRaw;
-  const drugName=dec.value;
-  if(!drugName)return;
-  const alloc={};
-  inputs.forEach(inp=>{
-    const supRaw=inp.getAttribute("data-sup")||"";
-    dec.innerHTML=supRaw;
-    const sup=dec.value;
-    if(sup)alloc[sup]=parseInt(inp.value)||0;
-  });
-  setAllocation(drugName,alloc);
-}
 
 // ═══════ SCREENS ═══════
 function showScreen(name){
@@ -683,16 +648,11 @@ function renderMonitor(el){
     h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
     h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
     h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
-    if(d.multi){
-      const allocData=d.alloc||{};
-      h+=`<div class="supplier-pick" data-drug="${esc(d.n)}"><div class="title">⚡ Розподілити по постачальниках (${esc(d.u)}):</div>`;
-      d.multi.forEach((sup,si)=>{
-        const supItems=d.allM.filter(t=>t.s===sup);
-        const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
-        const curVal=allocData[sup]||0;
-        h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" data-sup="${esc(sup)}" onchange="event.stopPropagation()" onclick="event.stopPropagation()"><span class="alloc-cap">/ ${fmt(maxQty)}</span></div>`;
-      });
-      h+=`<button class="alloc-apply" onclick="event.stopPropagation();applyAllocFromEl(this)">Застосувати</button>`;
+    if(d.multi&&!d.alloc){
+      h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено — внесіть у лист "Розподіл" файлу тендерів</div></div>`}
+    if(d.multi&&d.alloc){
+      h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
+      d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
       h+=`</div>`}
     h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
     d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
@@ -745,18 +705,15 @@ function renderAgreements(el){
 
 function renderConflicts(el){
   const conflicts=allData.filter(d=>d.multi&&!d.alloc);
-  if(!conflicts.length){el.innerHTML='<div class="empty-state">Немає конфліктів</div>';return}
-  let h='<div class="conflict-banner">⚡ Розподіліть закупівлі по постачальниках. Вкажіть кількість для кожного.</div>';
-  conflicts.forEach((d,ci)=>{
-    const allocData=d.alloc||{};
-    h+=`<div class="conflict-card" data-drug="${esc(d.n)}"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
+  if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл внесено у лист "Розподіл" файлу тендерів</div></div>';return}
+  let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Внесіть розподіл у лист <strong>"Розподіл"</strong> файлу тендерів на Google Drive, потім натисніть "Оновити".</div>';
+  conflicts.forEach(d=>{
+    h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
     d.multi.forEach(sup=>{
       const supItems=d.allM.filter(t=>t.s===sup);
       const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
-      const curVal=allocData[sup]||0;
-      h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input class="alloc-input" type="number" min="0" max="${maxQty}" value="${curVal}" data-sup="${esc(sup)}" onclick="event.stopPropagation()"></div>`;
+      h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div></div>`;
     });
-    h+=`<button class="alloc-apply" onclick="applyAllocFromEl(this)">Застосувати</button>`;
     h+=`</div>`;
   });
   el.innerHTML=h;
@@ -765,7 +722,7 @@ function renderConflicts(el){
 // ═══════ INIT ═══════
 (function(){
   const c=loadCache();
-  if(c){allData=c.data;allTenders=c.tenders;overrides=c.overrides||{};lastUpdated=c.ts?new Date(c.ts):null;
+  if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;
     if(c.purchases)parsedPurchases=c.purchases;
     showMain();fetchDriveBackground();
   }
