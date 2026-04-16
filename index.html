@@ -348,34 +348,19 @@ function getForm(s){const u=s.toUpperCase(),f=new Set();if(/РОЗЧИН|Р-Н|�
 //    the primary form is stated before accessories.
 // 3. Also look at packaging markers like "фл.", "амп.", "шпр." which are explicit short-forms.
 function getContainer(s){
-  // Determines PRIMARY packaging.
-  // Key insight: accessory mentions ("у комплекті з мірним шприцом", "+ розчинник")
-  // must be stripped before detection so they don't hijack the result.
-  // Note: \b does NOT work with Cyrillic in JS regex — we use explicit delimiter lookahead.
+  // Determines PRIMARY packaging — only distinguishes SYR vs VIAL (as original).
+  // Key fix: strip accessory mentions BEFORE detection, so "у комплекті з мірним шприцом"
+  // doesn't falsely classify a VIAL product as SYR.
+  // Note: \b does NOT work with Cyrillic in JS regex.
   let u=s.toUpperCase();
   u=u
     .replace(/У\s+КОМПЛЕКТІ\s+З[^.;,]*?(ШПРИЦ|ШПРИ|КРИШК|КОВПАЧК|МІРНИМ|ГОЛК|АДАПТЕР|ПРИСТРО)[^.;]*/g,"")
     .replace(/(З|ЗІ)\s+МІРНИМ\s+ШПРИЦ[^.;,]*/g,"")
     .replace(/РОЗЧ-?К\s*\d+[^.;,]*/g,"")
     .replace(/\+\s*РОЗЧИННИК[^.;,]*/g,"");
-  const markers=[
-    {type:"AMP", re:/(?:^|[\s.,;(])(АМПУЛ|АМП[\s.,)]|В\s+АМП|У\s+АМП)/},
-    {type:"SYR", re:/(?:^|[\s.,;(])(ШПРИЦ|ШПРИ[\s.,)]|ШПР[\s.,)])/},
-    {type:"VIAL", re:/(?:^|[\s.,;(])(ФЛАКОН|ФЛАК|ФЛ[\s.,)])/},
-    {type:"CONT", re:/(?:^|[\s.,;(])(КОНТЕЙНЕР|КОНТ[\s.,)])/},
-    {type:"SACHET", re:/(?:^|[\s.,;(])(САШЕ|ПАКЕТИК)/},
-    {type:"TUBE", re:/(?:^|[\s.,;(])(ТЮБИК|ТУБ[\s.,)])/},
-    {type:"BOTTLE", re:/(?:^|[\s.,;(])(ПЛЯШК|ПЛЯШ[\s.,)])/}
-  ];
-  let firstPos=Infinity, firstType=null;
-  for(const m of markers){
-    const match=u.match(m.re);
-    if(match && match.index<firstPos){
-      firstPos=match.index;
-      firstType=m.type;
-    }
-  }
-  return firstType;
+  if(/ШПРИЦ|ШПРИ/.test(u))return"SYR";
+  if(/ФЛАК|ФЛАКОН|ФЛ[\s.,]/.test(u))return"VIAL";
+  return null;
 }
 
 // Check if two container types are compatible.
@@ -407,9 +392,9 @@ for(const p of purchases){
 const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
 const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=stemUk(pt[1]),s2=stemUk(tt[1]);if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1)){const h1=pt[1].split("-")[0],h2=tt[1].split("-")[0];const hs1=stemUk(h1),hs2=stemUk(h2);if(hs1.length>=4&&hs2.length>=4){if(hs1!==hs2&&!hs1.startsWith(hs2)&&!hs2.startsWith(hs1))continue}}}if(!formsOk(pF,getForm(t.commercial)))continue;
 
-// Container check: use smarter getContainer + containersOk
+// Container check: use improved getContainer (strips accessories) with original comparison
 const pCont=getContainer(p.name),tCont=getContainer(t.commercial);
-if(!containersOk(pCont,tCont))continue;
+if(pCont&&tCont&&pCont!==tCont)continue;
 
 bm.push(i)}
 let matched=bm;
