@@ -12,6 +12,7 @@
 :root{--bg:#4a4e54;--card:rgba(40,44,50,.93);--card2:rgba(55,60,68,.88);--border:rgba(90,100,110,.45);--accent:#22c55e;--blue:#3b82f6;--green:#22c55e;--warn:#f59e0b;--danger:#ef4444;--orange:#f97316;--violet:#8b5cf6;--text:#e2e8f0;--muted:#a0aab8;--amber:#fbbf24}
 body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='6' height='6' fill='%23555960'/%3E%3Cpath d='M0 0L6 6' stroke='%235f636a' stroke-width='.7'/%3E%3Cpath d='M6 0L0 6' stroke='%234e5258' stroke-width='.7'/%3E%3C/svg%3E");color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;padding-bottom:60px}
 #app{max-width:800px;margin:0 auto}
+
 /* Header */
 #header{background:rgba(30,33,38,.95);backdrop-filter:blur(12px);border-bottom:1px solid rgba(34,197,94,.2);padding:12px 16px;position:sticky;top:0;z-index:50}
 .top-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -27,6 +28,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .hbtn.blue{border-color:rgba(59,130,246,.5);color:#60a5fa;background:rgba(59,130,246,.12)}
 .hbtn.blue:hover{background:rgba(59,130,246,.2)}
 .hbtn.amber{border-color:rgba(251,191,36,.5);color:#fbbf24;background:rgba(251,191,36,.1)}
+
 /* Search */
 .search-wrap{position:relative;margin-top:10px}
 .search-wrap input{width:100%;background:rgba(255,255,255,.08);border:1.5px solid rgba(34,197,94,.35);border-radius:12px;padding:11px 90px 11px 38px;color:#fff;font-size:15px;outline:none;transition:border .2s}
@@ -40,8 +42,10 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .pinned-tag{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(34,197,94,.12);border:1px solid var(--accent);border-radius:20px;font-size:13px;color:var(--accent);margin:8px 0}
 .pinned-tag .x{cursor:pointer;font-size:16px;font-weight:700;color:var(--muted);margin-left:4px}
 .pinned-tag .x:hover{color:var(--danger)}
+
 /* Body */
 #body{padding:12px 16px 0}
+
 /* Start screen */
 #start-screen{text-align:center;padding:50px 20px}
 .start-title{font-size:22px;font-weight:800;margin-bottom:4px}
@@ -56,6 +60,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .upload-zone.done{border-color:var(--green);border-style:solid}
 .hint-box{padding:14px;background:var(--card);border-radius:12px;border:1px solid var(--border);font-size:12px;color:var(--muted);margin-top:16px;line-height:1.6}
 .err-box{margin-top:10px;padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid var(--danger);border-radius:10px;color:var(--danger);font-size:13px}
+
 /* Stats */
 .stats-bar{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:12px}
 @media(max-width:640px){.stats-bar{grid-template-columns:repeat(4,1fr)}}
@@ -64,6 +69,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .stat-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);background:rgba(34,197,94,.15)}
 .stat-num{font-size:18px;font-weight:800}
 .stat-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+
 /* Sort & export row */
 .sort-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:4px}
 .sort-btns{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted);overflow-x:auto}
@@ -71,6 +77,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .sort-btn.active{border-color:var(--accent);background:rgba(34,197,94,.2);color:var(--accent)}
 .export-row{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center;font-size:11px}
 .exp-btn{padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);cursor:pointer;font-weight:600;font-size:11px;transition:all .15s}
+
 /* Cards */
 .card{background:rgba(42,46,52,.9);border:1px solid rgba(255,255,255,.1);border-radius:12px;margin-bottom:6px;overflow:hidden;cursor:pointer;transition:border .15s}
 .card:hover{border-color:rgba(255,255,255,.22)}
@@ -91,6 +98,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .bar-bg{flex:1;height:5px;background:#374151;border-radius:10px;overflow:hidden}
 .bar-fill{height:100%;border-radius:10px;transition:width .3s}
 .bar-pct{font-size:11px;color:var(--muted);flex-shrink:0}
+
 /* Card detail */
 .card-detail{padding:0 12px 12px;border-top:1px solid var(--border);margin-top:6px;display:none}
 .card.expanded .card-detail{display:block}
@@ -115,6 +123,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .tender-card .con{font-size:11px;color:var(--muted);margin-top:2px}
 .tender-card .comm{font-size:11px;color:var(--text);margin-top:4px;font-style:italic}
 .tender-card .row{display:flex;justify-content:space-between;font-size:12px;margin-top:3px}
+
 /* Agreements */
 .agr-card{background:rgba(35,38,43,.88);border:1px solid rgba(255,255,255,.08);border-radius:12px;margin-bottom:6px;padding:12px;cursor:pointer;transition:border .15s}
 .agr-card:hover{border-color:rgba(255,255,255,.2)}
@@ -129,6 +138,7 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .agr-item .name{font-weight:600;margin-bottom:2px;color:var(--accent)}
 .agr-item .mnn{font-size:10px;color:var(--muted);font-style:italic;margin-bottom:3px}
 .agr-item .row{display:flex;justify-content:space-between;margin-top:2px}
+
 /* Conflicts page */
 .conflict-banner{padding:10px 14px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:12px;font-size:13px;color:#fcd34d;margin-bottom:12px}
 .conflict-card{background:rgba(35,38,43,.88);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;margin-bottom:8px}
@@ -140,73 +150,78 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .conflict-opt .name{font-size:13px;font-weight:600}
 .conflict-opt .info{font-size:10px;color:var(--muted);margin-top:2px}
 .conflict-opt .check{color:var(--accent);font-size:16px;flex-shrink:0}
+
 .empty-state{text-align:center;padding:50px 20px;color:var(--muted)}
+
 mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2px}
+
 /* Loader */
 #loader{display:none;text-align:center;padding:60px 20px;color:var(--muted)}
 .loader-ico{font-size:44px;margin-bottom:14px}
 .loader-spin{animation:spin 1s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
+
 /* Hide/show */
 .hidden{display:none!important}
 </style>
 </head>
 <body>
 <div id="app">
-<div id="header">
-<div class="top-row">
-<div>
-<div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil</div>
+  <div id="header">
+    <div class="top-row">
+      <div>
+        <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
+        <div class="dev-credit">Developed by Ostap Khmil</div>
+      </div>
+      <div class="header-btns hidden" id="nav-btns">
+        <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг</button>
+        <button class="hbtn" id="btn-agreements" onclick="switchView('agreements')">Угоди</button>
+        <button class="hbtn amber hidden" id="btn-conflicts" onclick="switchView('conflicts')">⚡ <span id="conflict-count">0</span></button>
+        <button class="hbtn blue" onclick="loadFromDrive(true)">☁️ Оновити</button>
+        <button class="hbtn" onclick="showManualUpload()">📂</button>
+      </div>
+    </div>
+    <div id="search-area" class="hidden">
+      <div class="mode-row" id="mode-row">
+        <button class="mode-btn active" onclick="setMode('name',this)">Назва</button>
+        <button class="mode-btn" onclick="setMode('mnn',this)">МНН</button>
+        <button class="mode-btn" onclick="setMode('supplier',this)">Постачальник</button>
+        <button class="mode-btn" onclick="setMode('contract',this)">Угода</button>
+      </div>
+      <div id="pinned-wrap" class="hidden"></div>
+      <div class="search-wrap" id="search-wrap">
+        <span class="search-ico">🔍</span>
+        <input id="search-input" placeholder="Назва препарату..." oninput="onSearchInput(this.value)" onkeydown="if(event.key==='Enter')pinSearch()">
+        <button class="pin-btn" id="pin-btn" onclick="pinSearch()">📌 Закріпити</button>
+      </div>
+    </div>
+  </div>
+  <div id="body">
+    <div id="start-screen">
+      <div style="width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#166534,#22c55e);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#fff;margin:0 auto 16px;box-shadow:0 8px 32px rgba(34,197,94,.3)">TT</div>
+      <div class="start-title"><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div>
+      <div class="dev-credit" style="font-size:18px;margin-bottom:6px">Developed by Ostap Khmil</div>
+      <div class="start-sub">Моніторинг тендерних угод та закупівель</div>
+      <button class="big-btn" id="drive-btn" onclick="loadFromDrive(false)">☁️ Завантажити актуальні дані</button>
+      <div class="or-div">або завантажити файли вручну</div>
+      <div class="upload-zone" id="uz-manual" onclick="showManualFields()">📂 Завантажити .xlsx файли з пристрою</div>
+      <div id="manual-fields" class="hidden">
+        <div class="upload-zone" id="uz-p" onclick="event.stopPropagation();document.getElementById('file-p').click()">
+          <input id="file-p" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'p')">
+          + 1. Закупівлі (з 1С)
+        </div>
+        <div class="upload-zone" id="uz-t" onclick="event.stopPropagation();document.getElementById('file-t').click()">
+          <input id="file-t" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'t')">
+          + 2. Тендерні угоди
+        </div>
+      </div>
+      <div id="start-error"></div>
+    </div>
+    <div id="loader"><div class="loader-ico"><span class="loader-spin">⟳</span></div><div id="loader-text">Завантаження...</div></div>
+    <div id="main-screen" class="hidden"></div>
+  </div>
 </div>
-<div class="header-btns hidden" id="nav-btns">
-<button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг</button>
-<button class="hbtn" id="btn-agreements" onclick="switchView('agreements')">Угоди</button>
-<button class="hbtn amber hidden" id="btn-conflicts" onclick="switchView('conflicts')">⚡ <span id="conflict-count">0</span></button>
-<button class="hbtn blue" onclick="loadFromDrive(true)">☁️ Оновити</button>
-<button class="hbtn" onclick="showManualUpload()">📂</button>
-</div>
-</div>
-<div id="search-area" class="hidden">
-<div class="mode-row" id="mode-row">
-<button class="mode-btn active" onclick="setMode('name',this)">Назва</button>
-<button class="mode-btn" onclick="setMode('mnn',this)">МНН</button>
-<button class="mode-btn" onclick="setMode('supplier',this)">Постачальник</button>
-<button class="mode-btn" onclick="setMode('contract',this)">Угода</button>
-</div>
-<div id="pinned-wrap" class="hidden"></div>
-<div class="search-wrap" id="search-wrap">
-<span class="search-ico">🔍</span>
-<input id="search-input" placeholder="Назва препарату..." oninput="onSearchInput(this.value)" onkeydown="if(event.key==='Enter')pinSearch()">
-<button class="pin-btn" id="pin-btn" onclick="pinSearch()">📌 Закріпити</button>
-</div>
-</div>
-</div>
-<div id="body">
-<div id="start-screen">
-<div style="width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#166534,#22c55e);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#fff;margin:0 auto 16px;box-shadow:0 8px 32px rgba(34,197,94,.3)">TT</div>
-<div class="start-title"><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div>
-<div class="dev-credit" style="font-size:18px;margin-bottom:6px">Developed by Ostap Khmil</div>
-<div class="start-sub">Моніторинг тендерних угод та закупівель</div>
-<button class="big-btn" id="drive-btn" onclick="loadFromDrive(false)">☁️ Завантажити актуальні дані</button>
-<div class="or-div">або завантажити файли вручну</div>
-<div class="upload-zone" id="uz-manual" onclick="showManualFields()">📂 Завантажити .xlsx файли з пристрою</div>
-<div id="manual-fields" class="hidden">
-<div class="upload-zone" id="uz-p" onclick="event.stopPropagation();document.getElementById('file-p').click()">
-<input id="file-p" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'p')">
-1. Закупівлі (з 1С)
-</div>
-<div class="upload-zone" id="uz-t" onclick="event.stopPropagation();document.getElementById('file-t').click()">
-<input id="file-t" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0],'t')">
-2. Тендерні угоди
-</div>
-</div>
-<div id="start-error"></div>
-</div>
-<div id="loader"><div class="loader-ico"><span class="loader-spin">⟳</span></div><div id="loader-text">Завантаження...</div></div>
-<div id="main-screen" class="hidden"></div>
-</div>
-</div>
+
 <script>
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
@@ -219,117 +234,120 @@ let currentView="monitor", searchMode="name", currentSearch="", pinnedSearch="";
 let currentFilter="all", currentSort="status";
 let expandedCard=null, expandedAgr=null;
 let purchasesRaw=null, tendersRaw=null;
-let parsedPurchases=null;
+let parsedPurchases=null; // cached parsed purchases for re-matching
 let lastUpdated=null;
 let showAllCards=false;
-
 function toggleFilter(k){
-if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
-else{showAllCards=false;currentFilter=currentFilter===k?"all":k}
-render();
+  if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
+  else{showAllCards=false;currentFilter=currentFilter===k?"all":k}
+  render();
 }
 
 // ═══════ CACHE ═══════
 function saveCache(){
-try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,ts:Date.now()}))}catch(e){
-console.warn("Cache full, saving without purchases",e);
-try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,ts:Date.now()}))}catch{}
-}
+  try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,ts:Date.now()}))}catch(e){
+    console.warn("Cache full, saving without purchases",e);
+    try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,ts:Date.now()}))}catch{}
+  }
 }
 function loadCache(){
-try{
-const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
-const d=JSON.parse(r);
-if(!d||!Array.isArray(d.data)||!Array.isArray(d.tenders))return null;
-if(!d.data.length||typeof d.data[0].n!=="string")return null;
-if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
-if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
-return d;
-}catch{return null}
+  try{
+    const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
+    const d=JSON.parse(r);
+    if(!d||!Array.isArray(d.data)||!Array.isArray(d.tenders))return null;
+    if(!d.data.length||typeof d.data[0].n!=="string")return null;
+    if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
+    if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
+    return d;
+  }catch{return null}
 }
 
 // ═══════ XLSX PARSING ═══════
+// Known dose errors in 1С data: [{match: regex, from: str, to: str}]
 const DOSE_FIXES=[
-{match:/ОКТРЕОТИД/i,from:"10мг/мл",to:"0,1мг/мл"},
-{match:/ОКТРЕОТИД/i,from:"0,01%",to:"0,1мг/мл"}
+  {match:/ОКТРЕОТИД/i,from:"10мг/мл",to:"0,1мг/мл"},
+  {match:/ОКТРЕОТИД/i,from:"0,01%",to:"0,1мг/мл"}
 ];
 function fixKnownDoses(name){let n=name;for(const f of DOSE_FIXES)if(f.match.test(n))n=n.replace(f.from,f.to);return n}
-
 function parsePurchases(buf){
-const wb=XLSX.read(buf,{type:"array"});
-const ws=wb.Sheets[wb.SheetNames[0]];
-const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-if(rows.length<12)throw new Error("Файл закупівель: занадто мало рядків ("+rows.length+"). Очікується вивантаження з 1С.");
-let hasNumericQty=false;
-for(let i=10;i<Math.min(rows.length,20);i++){const r=rows[i];if(r&&typeof r[6]==="number")hasNumericQty=true;}
-if(!hasNumericQty)throw new Error("Файл закупівель: не знайдено числових даних у колонці G (кількість). Можливо формат файлу змінився.");
-const drugs={};
-for(let i=10;i<rows.length;i++){
-const r=rows[i];if(!r||!r[0])continue;
-const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=r[3],f=r[5],g=r[6],h=r[7];
-if(g&&!d&&!f)continue;
-if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
-if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
-drugs[a].qty+=g||0;drugs[a].sum+=(typeof h==="number"?h:0);
+  const wb=XLSX.read(buf,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  // Validate: expect data rows after row 10 with columns A(name), D(date), F(unit), G(qty)
+  if(rows.length<12)throw new Error("Файл закупівель: занадто мало рядків ("+rows.length+"). Очікується вивантаження з 1С.");
+  let hasNumericQty=false;
+  for(let i=10;i<Math.min(rows.length,20);i++){const r=rows[i];if(r&&typeof r[6]==="number")hasNumericQty=true;}
+  if(!hasNumericQty)throw new Error("Файл закупівель: не знайдено числових даних у колонці G (кількість). Можливо формат файлу змінився.");
+  const drugs={};
+  for(let i=10;i<rows.length;i++){
+    const r=rows[i];if(!r||!r[0])continue;
+    const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=r[3],f=r[5],g=r[6],h=r[7];
+    if(g&&!d&&!f)continue;
+    if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
+      if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
+      drugs[a].qty+=g||0;drugs[a].sum+=(typeof h==="number"?h:0);
+    }
+  }
+  if(!Object.keys(drugs).length)throw new Error("Файл закупівель: не знайдено жодного препарату. Перевірте формат файлу.");
+  return Object.entries(drugs).sort((a,b)=>a[0].localeCompare(b[0],"uk"))
+    .map(([name,d])=>({name,unit:d.unit,qty:Math.round(d.qty*100)/100,sum:Math.round(d.sum*100)/100}));
 }
-}
-if(!Object.keys(drugs).length)throw new Error("Файл закупівель: не знайдено жодного препарату. Перевірте формат файлу.");
-return Object.entries(drugs).sort((a,b)=>a[0].localeCompare(b[0],"uk"))
-.map(([name,d])=>({name,unit:d.unit,qty:Math.round(d.qty*100)/100,sum:Math.round(d.sum*100)/100}));
-}
-
 function parseQty(v){if(typeof v==="number")return v;if(typeof v==="string"){const s=v.replace(/\u00a0/g," ").trim();if(/^\d+\.\d{3}$/.test(s))return parseInt(s.replace(".",""));const m=s.match(/^([\d\s]+)/);if(m){const n=m[1].replace(/\s/g,"");if(/^\d+$/.test(n))return parseInt(n)}}return null}
 function parsePrice(v){if(typeof v==="number")return v;if(typeof v==="string"){const m=v.replace(/\u00a0/g," ").trim().match(/^([\d\s]+[.,]?\d*)/);if(m)try{return parseFloat(m[1].replace(/\s/g,"").replace(",","."))}catch{}}return null}
-
 function parseTenders(buf){
-const wb=XLSX.read(buf,{type:"array"});
-if(!wb.SheetNames.length)throw new Error("Файл тендерів: не знайдено жодного листа.");
-const tenders=[];
-let sheetsWithContract=0;
-for(const sn of wb.SheetNames){
-if(sn==="Розподіл")continue;
-const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});let contract=null;
-for(const r of rows){if(!r)continue;
-const[a,b,c,d,eR,fv,gv]=[r[0],r[1],r[2],r[3],r[4],r[5],r[6]];
-if(typeof a==="string"&&(a.includes("Договір")||a.includes("Договору"))){contract=a.trim();sheetsWithContract++;continue}
-if(!b)continue;const bs=String(b).trim();
-if(bs.includes("Найменування")||bs.includes("Міжнародна")||bs.includes("Загальна")||bs.includes("ПДВ"))continue;
-const e=parseQty(eR);if(e==null||e<=0||!c)continue;
-tenders.push({supplier:sn,contract:contract||"",mnn:bs,commercial:String(c).trim(),unit:d?String(d).trim():"",qty:e,price:parsePrice(gv)??parsePrice(fv)});
+  const wb=XLSX.read(buf,{type:"array"});
+  if(!wb.SheetNames.length)throw new Error("Файл тендерів: не знайдено жодного листа.");
+  const tenders=[];
+  let sheetsWithContract=0;
+  for(const sn of wb.SheetNames){
+    if(sn==="Розподіл")continue; // skip allocation sheet
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});let contract=null;
+    for(const r of rows){if(!r)continue;
+      const[a,b,c,d,eR,fv,gv]=[r[0],r[1],r[2],r[3],r[4],r[5],r[6]];
+      if(typeof a==="string"&&(a.includes("Договір")||a.includes("Договору"))){contract=a.trim();sheetsWithContract++;continue}
+      if(!b)continue;const bs=String(b).trim();
+      if(bs.includes("Найменування")||bs.includes("Міжнародна")||bs.includes("Загальна")||bs.includes("ПДВ"))continue;
+      const e=parseQty(eR);if(e==null||e<=0||!c)continue;
+      tenders.push({supplier:sn,contract:contract||"",mnn:bs,commercial:String(c).trim(),unit:d?String(d).trim():"",qty:e,price:parsePrice(gv)??parsePrice(fv)});
+    }
+  }
+  if(!sheetsWithContract)throw new Error("Файл тендерів: не знайдено жодного договору. Очікуються листи з постачальниками та рядки 'Договір...'.");
+  if(!tenders.length)throw new Error("Файл тендерів: не знайдено жодної позиції. Перевірте формат файлу.");
+  return tenders;
 }
-}
-if(!sheetsWithContract)throw new Error("Файл тендерів: не знайдено жодного договору. Очікуються листи з постачальниками та рядки 'Договір...'.");
-if(!tenders.length)throw new Error("Файл тендерів: не знайдено жодної позиції. Перевірте формат файлу.");
-return tenders;
-}
-
+// Parse "Розподіл" sheet → {drugName: {supplier: qty, ...}}
+// Supplier names are matched fuzzy against actual tender sheet names
 function parseAllocations(buf){
-const wb=XLSX.read(buf,{type:"array"});
-const sn=wb.SheetNames.find(s=>s==="Розподіл");
-if(!sn)return{};
-const supNames=wb.SheetNames.filter(s=>s!=="Розподіл");
-function matchSup(input){
-const inp=input.toLowerCase();
-const exact=supNames.find(s=>s.toLowerCase()===inp);
-if(exact)return exact;
-const partial=supNames.find(s=>inp.includes(s.toLowerCase()));
-if(partial)return partial;
-const partial2=supNames.find(s=>s.toLowerCase().includes(inp));
-if(partial2)return partial2;
-return input;
-}
-const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
-const alloc={};
-for(let i=1;i<rows.length;i++){
-const r=rows[i];if(!r||!r[0]||!r[1])continue;
-const name=String(r[0]).trim().replace(/\s+/g,' ');
-const supRaw=String(r[1]).trim();
-const sup=matchSup(supRaw);
-const qty=typeof r[2]==="number"?r[2]:(parseInt(String(r[2]))||0);
-if(!alloc[name])alloc[name]={};
-alloc[name][sup]=qty;
-}
-return alloc;
+  const wb=XLSX.read(buf,{type:"array"});
+  const sn=wb.SheetNames.find(s=>s==="Розподіл");
+  if(!sn)return{};
+  // Build list of actual supplier names (sheet names minus Розподіл)
+  const supNames=wb.SheetNames.filter(s=>s!=="Розподіл");
+  function matchSup(input){
+    const inp=input.toLowerCase();
+    // Exact match first
+    const exact=supNames.find(s=>s.toLowerCase()===inp);
+    if(exact)return exact;
+    // Sheet name is substring of input (e.g. "СТМ" in "СТМ-Фарм")
+    const partial=supNames.find(s=>inp.includes(s.toLowerCase()));
+    if(partial)return partial;
+    // Input is substring of sheet name
+    const partial2=supNames.find(s=>s.toLowerCase().includes(inp));
+    if(partial2)return partial2;
+    return input; // fallback: use as-is
+  }
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
+  const alloc={};
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i];if(!r||!r[0]||!r[1])continue;
+    const name=String(r[0]).trim().replace(/\s+/g,' ');
+    const supRaw=String(r[1]).trim();
+    const sup=matchSup(supRaw);
+    const qty=typeof r[2]==="number"?r[2]:(parseInt(String(r[2]))||0);
+    if(!alloc[name])alloc[name]={};
+    alloc[name][sup]=qty;
+  }
+  return alloc;
 }
 
 // ═══════ MATCHING ═══════
@@ -338,57 +356,9 @@ function norm(s){return s.toUpperCase().trim().replace(/®/g,"").replace(/\u00a0
 function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|%|МО|Г|Л|МГ\/МЛ)$/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("(")||/^МГ\/МЛ$/i.test(c)||/^МКГ\/МЛ$/i.test(c))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
 function stemUk(w){if(w.length<=4)return w;for(const s of["ИНУ","ІНУ","ОНУ","АТУ","ЕТУ","ИНА","ІНА","ОМ","ІМ","ОЇ","ЕЙ","ІЙ","ОГО","ОМУ","ІВ","ІН","АМ","ЯМ","У","А","Е","І","И","Ю","Я","О"])if(w.endsWith(s)&&w.length-s.length>=4)return w.slice(0,-s.length);return w}
 function getForm(s){const u=s.toUpperCase(),f=new Set();if(/РОЗЧИН|Р-Н|Р\/Н|Д\/ІН|КОНЦ\.|КОНЦЕНТРАТ/.test(u))f.add("SOL");if(/ТАБЛ|ТАБ[\s.,]/.test(u))f.add("TAB");if(/КАПС/.test(u))f.add("CAP");if(/КРАПЛІ|КР\.ОЧН|ОЧНІ/.test(u))f.add("DRP");if(/СУПОЗИТОР/.test(u))f.add("SUP");if(/ПОРОШОК|ПОР[\s.,]|ПОР\//.test(u))f.add("PWD");if(/ЕМУЛЬС|ЕМУЛ/.test(u))f.add("EMU");if(/АЕРОЗОЛЬ/.test(u))f.add("AER");if(/СУСПЕНЗІЯ|СУСП/.test(u))f.add("SSP");if(/ІНФУЗІЙ|ІНФУЗ/.test(u))f.add("INF");if(/ІНГАЛЯЦІ/.test(u))f.add("INH");if(/ГРАНУЛИ|ГРАН/.test(u))f.add("GRN");if(/МАЗЬ/.test(u))f.add("OIN");return f}
-
-// Container type: determines PRIMARY packaging (where the drug actually sits).
-// Must distinguish mentions of the primary container from mentions of included accessories
-// (e.g. "у флаконі ... у комплекті з мірним шприцом" → the drug is in a VIAL, shprits is just an accessory).
-// Strategy:
-// 1. If text mentions "у комплекті з шприц..." or "з мірним шприц..." — it's an accessory, not primary.
-// 2. The primary container is whichever is mentioned FIRST (not last). In Ukrainian pharma descriptions
-//    the primary form is stated before accessories.
-// 3. Also look at packaging markers like "фл.", "амп.", "шпр." which are explicit short-forms.
-function getContainer(s){
-  // Determines PRIMARY packaging.
-  // Key insight: accessory mentions ("у комплекті з мірним шприцом", "+ розчинник")
-  // must be stripped before detection so they don't hijack the result.
-  // Note: \b does NOT work with Cyrillic in JS regex — we use explicit delimiter lookahead.
-  let u=s.toUpperCase();
-  u=u
-    .replace(/У\s+КОМПЛЕКТІ\s+З[^.;,]*?(ШПРИЦ|ШПРИ|КРИШК|КОВПАЧК|МІРНИМ|ГОЛК|АДАПТЕР|ПРИСТРО)[^.;]*/g,"")
-    .replace(/(З|ЗІ)\s+МІРНИМ\s+ШПРИЦ[^.;,]*/g,"")
-    .replace(/РОЗЧ-?К\s*\d+[^.;,]*/g,"")
-    .replace(/\+\s*РОЗЧИННИК[^.;,]*/g,"");
-  const markers=[
-    {type:"AMP", re:/(?:^|[\s.,;(])(АМПУЛ|АМП[\s.,)]|В\s+АМП|У\s+АМП)/},
-    {type:"SYR", re:/(?:^|[\s.,;(])(ШПРИЦ|ШПРИ[\s.,)]|ШПР[\s.,)])/},
-    {type:"VIAL", re:/(?:^|[\s.,;(])(ФЛАКОН|ФЛАК|ФЛ[\s.,)])/},
-    {type:"CONT", re:/(?:^|[\s.,;(])(КОНТЕЙНЕР|КОНТ[\s.,)])/},
-    {type:"SACHET", re:/(?:^|[\s.,;(])(САШЕ|ПАКЕТИК)/},
-    {type:"TUBE", re:/(?:^|[\s.,;(])(ТЮБИК|ТУБ[\s.,)])/},
-    {type:"BOTTLE", re:/(?:^|[\s.,;(])(ПЛЯШК|ПЛЯШ[\s.,)])/}
-  ];
-  let firstPos=Infinity, firstType=null;
-  for(const m of markers){
-    const match=u.match(m.re);
-    if(match && match.index<firstPos){
-      firstPos=match.index;
-      firstType=m.type;
-    }
-  }
-  return firstType;
-}
-
-// Check if two container types are compatible.
-// Same type → match. Either undefined → match (assume generic).
-// VIAL and BOTTLE are treated as compatible (both are sealed glass containers).
-function containersOk(p,t){
-  if(!p||!t)return true; // either unspecified → allow
-  if(p===t)return true;
-  const bottleLike=new Set(["VIAL","BOTTLE"]);
-  if(bottleLike.has(p)&&bottleLike.has(t))return true;
-  return false;
-}
-
+// Container type: syringe vs vial vs amp — these are physically different and must match
+function getContainer(s){const u=s.toUpperCase();if(/ШПРИЦ|ШПРИ/.test(u))return"SYR";if(/ФЛАК|ФЛАКОН|ФЛ[\s.,]/.test(u))return"VIAL";return null}
+// Pack size filter: if both have explicit №N and they differ, it's a different product
 function extractPkStrict(n){const m=n.match(/[№#]\s*(\d+)/);return m?parseInt(m[1]):0}
 function getDoses(s){const d=new Set();for(const m of norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){const v=m[1].replace(",","."),u=m[2];if(u==="Г")try{d.add(String(Math.round(parseFloat(v)*1000))+"МГ")}catch{d.add(v+"Г")}else d.add(v+u)}return d}
 function getVolumes(s){const u=s.toUpperCase().replace(/\u00a0/g," "),v=new Set();for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*МЛ/g))v.add(parseFloat(m[1].replace(",",".")));for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*Л[\s.,)]/g))v.add(parseFloat(m[1].replace(",","."))*1000);return v}
@@ -402,89 +372,99 @@ const T_SINGLE=new Set(["шпр","шприц","фл","фл.","флак","фла�
 function cDate(c){if(!c)return[9999,1,1];let m=c.match(/(?:від|Авд)\s+(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);if(m){let y=parseInt(m[3]);if(y<100)y+=2000;return[y,parseInt(m[2]),parseInt(m[1])]}const mo={"січня":1,"лютого":2,"березня":3,"квітня":4,"травня":5,"червня":6,"липня":7,"серпня":8,"вересня":9,"жовтня":10,"листопада":11,"грудня":12};m=c.match(/від\s+[«"]?(\d{1,2})[»"]?\s+(\w+)\s+(\d{4})/);if(m)return[parseInt(m[3]),mo[m[2].toLowerCase()]||1,parseInt(m[1])];m=c.match(/від\s+(\d{1,2}),(\d{1,2})\s+(\d{4})/);if(m)return[parseInt(m[3]),parseInt(m[2]),parseInt(m[1])];return[9999,1,1]}
 
 function matchAll(purchases,tenders,ov={}){
-const results=[];
-for(const p of purchases){
-const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
-const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=stemUk(pt[1]),s2=stemUk(tt[1]);if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1)){const h1=pt[1].split("-")[0],h2=tt[1].split("-")[0];const hs1=stemUk(h1),hs2=stemUk(h2);if(hs1.length>=4&&hs2.length>=4){if(hs1!==hs2&&!hs1.startsWith(hs2)&&!hs2.startsWith(hs1))continue}}}if(!formsOk(pF,getForm(t.commercial)))continue;
-
-// Container check: use smarter getContainer + containersOk
-const pCont=getContainer(p.name),tCont=getContainer(t.commercial);
-if(!containersOk(pCont,tCont))continue;
-
-bm.push(i)}
-let matched=bm;
-const pPk=extractPkStrict(p.name);
-if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStrict(tenders[i].commercial);return tPk===0||tPk===pPk});if(pkf.length>0)matched=pkf}
-if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
-if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
-const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
-let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
-const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
-let tInfo=allTI;
-const ovEntry=isMulti?ov[p.name]:null;
-if(isMulti&&ovEntry&&typeof ovEntry==="object"){
-}else if(isMulti&&typeof ovEntry==="string"){
-const first=allTI.filter(t=>t.s===ovEntry);
-const rest=allTI.filter(t=>t.s!==ovEntry);
-rest.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
-tInfo=[...first,...rest];
-}
-let consumed=p.qty;
-if(isMulti&&ovEntry&&typeof ovEntry==="object"){
-tInfo=allTI;
-}else if(tInfo.length>1){
-if(!isMulti||!ovEntry)tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
-let left=p.qty;const active=[];
-for(const t of tInfo){
-if(left<=0){active.push(t);continue}
-if(left>=t.cq){left-=t.cq;}
-else{consumed=left;active.push(t);left=0}
-}
-if(active.length>0)tInfo=active;
-else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
-}
-const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
-if(isAlloc){
-for(const sup of Object.keys(ovEntry)){
-const supQty=ovEntry[sup]||0;
-const supTenders=allTI.filter(t=>t.s===sup);
-if(!supTenders.length)continue;
-const stq=supTenders.reduce((s,t)=>s+t.cq,0);
-const srem=stq>0?stq-supQty:0;
-const spct=stq>0?Math.round(supQty/stq*1000)/10:0;
-const sNow=new Date();let sEarliest=[9999,1,1];supTenders.forEach(t=>{const dd=cDate(t.c);if(dd[0]<sEarliest[0]||(dd[0]===sEarliest[0]&&(dd[1]<sEarliest[1]||(dd[1]===sEarliest[1]&&dd[2]<sEarliest[2]))))sEarliest=dd});
-const scs=sEarliest[0]<9999?new Date(sEarliest[0],sEarliest[1]-1,sEarliest[2]):null;
-const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
-const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
-let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
-if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
-}
-for(const sup of uSup){
-if(ovEntry[sup]!==undefined)continue;
-const supTenders=allTI.filter(t=>t.s===sup);
-if(!supTenders.length)continue;
-const stq=supTenders.reduce((s,t)=>s+t.cq,0);
-let sdu=p.unit,sdtq=stq;
-if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
-results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
-}
-}else{
-const tq=tInfo.reduce((s,t)=>s+t.cq,0);
-const rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
-const now=new Date();let earliest=[9999,1,1];tInfo.forEach(t=>{const d=cDate(t.c);if(d[0]<earliest[0]||(d[0]===earliest[0]&&(d[1]<earliest[1]||(d[1]===earliest[1]&&d[2]<earliest[2]))))earliest=d});
-const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
-const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
-const mr=p.qty>0?p.qty/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
-let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
-if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null,alloc:null});
-}
-}
-const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
-const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
-for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
-return results;
+  const results=[];
+  for(const p of purchases){
+    const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
+    const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=stemUk(pt[1]),s2=stemUk(tt[1]);if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1)){const h1=pt[1].split("-")[0],h2=tt[1].split("-")[0];const hs1=stemUk(h1),hs2=stemUk(h2);if(hs1.length>=4&&hs2.length>=4){if(hs1!==hs2&&!hs1.startsWith(hs2)&&!hs2.startsWith(hs1))continue}}}if(!formsOk(pF,getForm(t.commercial)))continue;
+    // Container check: syringe vs vial — must match if both specified
+    const pCont=getContainer(p.name),tCont=getContainer(t.commercial);if(pCont&&tCont&&pCont!==tCont)continue;
+    bm.push(i)}
+    let matched=bm;
+    // Pack-size filter: if purchase has №N and tender has №M and N≠M, filter out
+    const pPk=extractPkStrict(p.name);
+    if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStrict(tenders[i].commercial);return tPk===0||tPk===pPk});if(pkf.length>0)matched=pkf}
+    // Dose filter
+    if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
+    // Volume filter — apply even for single match (200ml ≠ 100ml)
+    if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
+    const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
+    let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
+    const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
+    // Override can be: string (legacy priority) or object {supplier: qty} (allocation)
+    let tInfo=allTI;
+    const ovEntry=isMulti?ov[p.name]:null;
+    if(isMulti&&ovEntry&&typeof ovEntry==="object"){
+      // Quantity allocation mode: user specified how much from each supplier
+      // Keep all suppliers, consumed will be calculated per-supplier below
+    }else if(isMulti&&typeof ovEntry==="string"){
+      // Legacy priority mode: put chosen supplier first
+      const first=allTI.filter(t=>t.s===ovEntry);
+      const rest=allTI.filter(t=>t.s!==ovEntry);
+      rest.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
+      tInfo=[...first,...rest];
+    }
+    let consumed=p.qty;
+    if(isMulti&&ovEntry&&typeof ovEntry==="object"){
+      // Allocation mode: show all suppliers that have allocation > 0 or have remaining
+      tInfo=allTI;
+      // consumed stays as p.qty — total purchased
+    }else if(tInfo.length>1){
+      // Cascade consumption
+      if(!isMulti||!ovEntry)tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
+      let left=p.qty;const active=[];
+      for(const t of tInfo){
+        if(left<=0){active.push(t);continue}
+        if(left>=t.cq){left-=t.cq;}
+        else{consumed=left;active.push(t);left=0}
+      }
+      if(active.length>0)tInfo=active;
+      else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
+    }
+    // Compute metrics
+    const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
+    if(isAlloc){
+      // Split into separate results per supplier
+      for(const sup of Object.keys(ovEntry)){
+        const supQty=ovEntry[sup]||0;
+        const supTenders=allTI.filter(t=>t.s===sup);
+        if(!supTenders.length)continue;
+        const stq=supTenders.reduce((s,t)=>s+t.cq,0);
+        const srem=stq>0?stq-supQty:0;
+        const spct=stq>0?Math.round(supQty/stq*1000)/10:0;
+        const sNow=new Date();let sEarliest=[9999,1,1];supTenders.forEach(t=>{const dd=cDate(t.c);if(dd[0]<sEarliest[0]||(dd[0]===sEarliest[0]&&(dd[1]<sEarliest[1]||(dd[1]===sEarliest[1]&&dd[2]<sEarliest[2]))))sEarliest=dd});
+        const scs=sEarliest[0]<9999?new Date(sEarliest[0],sEarliest[1]-1,sEarliest[2]):null;
+        const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
+        const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
+        let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
+        if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
+        results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
+      }
+      // Also add suppliers with 0 allocation that have capacity (for display)
+      for(const sup of uSup){
+        if(ovEntry[sup]!==undefined)continue;
+        const supTenders=allTI.filter(t=>t.s===sup);
+        if(!supTenders.length)continue;
+        const stq=supTenders.reduce((s,t)=>s+t.cq,0);
+        let sdu=p.unit,sdtq=stq;
+        if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
+        results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
+      }
+    }else{
+    const tq=tInfo.reduce((s,t)=>s+t.cq,0);
+    const rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
+    const now=new Date();let earliest=[9999,1,1];tInfo.forEach(t=>{const d=cDate(t.c);if(d[0]<earliest[0]||(d[0]===earliest[0]&&(d[1]<earliest[1]||(d[1]===earliest[1]&&d[2]<earliest[2]))))earliest=d});
+    const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
+    const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
+    const mr=p.qty>0?p.qty/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
+    let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
+    if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
+    results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null,alloc:null});
+    }
+  }
+  const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
+  const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
+  for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
+  return results;
 }
 
 // ═══════ STATUS ═══════
@@ -499,50 +479,50 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
-showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
-await fetchDriveBackground(true);
+  if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
+  showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
+  await fetchDriveBackground(true);
 }
 async function fetchDriveBackground(showErr){
-try{
-const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()}),fetch(GDRIVE_T).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()})]);
-purchasesRaw=pB;tendersRaw=tB;
-const p=parsePurchases(pB);const t=parseTenders(tB);
-overrides=parseAllocations(tB);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
-saveCache();showMain();
-}catch(e){if(showErr){document.getElementById("start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("start")}}
+  try{
+    const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()}),fetch(GDRIVE_T).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()})]);
+    purchasesRaw=pB;tendersRaw=tB;
+    const p=parsePurchases(pB);const t=parseTenders(tB);
+    overrides=parseAllocations(tB);
+    parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+    saveCache();showMain();
+  }catch(e){if(showErr){document.getElementById("start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("start")}}
 }
 function handleFile(file,type){
-if(!file)return;
-const reader=new FileReader();
-reader.onload=e=>{
-try{
-if(type==="p"){purchasesRaw=e.target.result;document.getElementById("uz-p").classList.add("done");document.getElementById("uz-p").textContent="✓ "+file.name}
-else{tendersRaw=e.target.result;document.getElementById("uz-t").classList.add("done");document.getElementById("uz-t").textContent="✓ "+file.name}
-if(purchasesRaw&&tendersRaw){
-showLoader("Обробка файлів...");
-setTimeout(()=>{
-const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
-overrides=parseAllocations(tendersRaw);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
-saveCache();showMain();
-},50);
-}
-}catch(err){document.getElementById("start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>'}
-};
-reader.readAsArrayBuffer(file);
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      if(type==="p"){purchasesRaw=e.target.result;document.getElementById("uz-p").classList.add("done");document.getElementById("uz-p").textContent="✓ "+file.name}
+      else{tendersRaw=e.target.result;document.getElementById("uz-t").classList.add("done");document.getElementById("uz-t").textContent="✓ "+file.name}
+      if(purchasesRaw&&tendersRaw){
+        showLoader("Обробка файлів...");
+        setTimeout(()=>{
+          const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
+          overrides=parseAllocations(tendersRaw);
+          parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+          saveCache();showMain();
+        },50);
+      }
+    }catch(err){document.getElementById("start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>'}
+  };
+  reader.readAsArrayBuffer(file);
 }
 function showManualUpload(){showScreen("start")}
 function showManualFields(){document.getElementById("manual-fields").classList.remove("hidden");document.getElementById("uz-manual").classList.add("hidden")}
 
 // ═══════ SCREENS ═══════
 function showScreen(name){
-document.getElementById("start-screen").classList.toggle("hidden",name!=="start");
-document.getElementById("loader").classList.toggle("hidden",name!=="loader");
-document.getElementById("main-screen").classList.toggle("hidden",name!=="main");
-document.getElementById("nav-btns").classList.toggle("hidden",name!=="main");
-document.getElementById("search-area").classList.toggle("hidden",name!=="main");
+  document.getElementById("start-screen").classList.toggle("hidden",name!=="start");
+  document.getElementById("loader").classList.toggle("hidden",name!=="loader");
+  document.getElementById("main-screen").classList.toggle("hidden",name!=="main");
+  document.getElementById("nav-btns").classList.toggle("hidden",name!=="main");
+  document.getElementById("search-area").classList.toggle("hidden",name!=="main");
 }
 function showLoader(msg){showScreen("loader");document.getElementById("loader-text").textContent=msg}
 function showMain(){showScreen("main");render()}
@@ -551,18 +531,18 @@ function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pin
 // ═══════ VIEW SWITCHING ═══════
 function switchView(v){currentView=v;expandedCard=null;expandedAgr=null;render();updateNavBtns()}
 function updateNavBtns(){
-document.getElementById("btn-monitor").classList.toggle("active",currentView==="monitor");
-document.getElementById("btn-agreements").classList.toggle("active",currentView==="agreements");
-document.getElementById("btn-conflicts").classList.toggle("active",currentView==="conflicts");
+  document.getElementById("btn-monitor").classList.toggle("active",currentView==="monitor");
+  document.getElementById("btn-agreements").classList.toggle("active",currentView==="agreements");
+  document.getElementById("btn-conflicts").classList.toggle("active",currentView==="conflicts");
 }
 function setMode(m,btn){searchMode=m;document.querySelectorAll(".mode-btn").forEach(b=>b.classList.remove("active"));btn.classList.add("active");
-const ph={name:"Назва препарату...",mnn:"МНН...",supplier:"Постачальник...",contract:"Угода..."};
-document.getElementById("search-input").placeholder=ph[m]||ph.name;currentSearch="";document.getElementById("search-input").value="";render()}
+  const ph={name:"Назва препарату...",mnn:"МНН...",supplier:"Постачальник...",contract:"Угода..."};
+  document.getElementById("search-input").placeholder=ph[m]||ph.name;currentSearch="";document.getElementById("search-input").value="";render()}
 let _searchTimer=null;
 function onSearchInput(v){
-document.getElementById("pin-btn").style.display=v.trim()?"block":"none";
-clearTimeout(_searchTimer);
-_searchTimer=setTimeout(()=>{currentSearch=v.trim();render()},200);
+  document.getElementById("pin-btn").style.display=v.trim()?"block":"none";
+  clearTimeout(_searchTimer);
+  _searchTimer=setTimeout(()=>{currentSearch=v.trim();render()},200);
 }
 function pinSearch(){const v=document.getElementById("search-input").value.trim();if(!v)return;pinnedSearch=v;currentSearch="";document.getElementById("search-input").value="";document.getElementById("pin-btn").style.display="none";render()}
 function unpinSearch(){pinnedSearch="";render()}
@@ -570,173 +550,182 @@ function unpinSearch(){pinnedSearch="";render()}
 // ═══════ SEARCH FILTER ═══════
 function getActiveSearch(){return pinnedSearch||currentSearch}
 function filterData(data){
-const q=getActiveSearch();
-let res=data;
-if(q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);
-if(searchMode==="name")res=res.filter(d=>multiMatch(d.n,w));
-else if(searchMode==="mnn")res=res.filter(d=>d.t.some(t=>multiMatch(t.mn,w)));
-else if(searchMode==="supplier")res=res.filter(d=>d.t.some(t=>multiMatch(t.s,w)));
-else if(searchMode==="contract")res=res.filter(d=>d.t.some(t=>multiMatch(t.c,w)));
-}
-if(currentFilter!=="all")res=res.filter(d=>gs(d)===currentFilter);
-res=[...res];
-if(currentSort==="status")res.sort((x,y)=>(SO[gs(x)]??5)-(SO[gs(y)]??5)||x.n.localeCompare(y.n,"uk"));
-else if(currentSort==="name")res.sort((x,y)=>x.n.localeCompare(y.n,"uk"));
-else if(currentSort==="months")res.sort((x,y)=>(x.ml||999)-(y.ml||999));
-else if(currentSort==="pct")res.sort((x,y)=>(y.pct||0)-(x.pct||0));
-return res;
+  const q=getActiveSearch();
+  let res=data;
+  if(q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);
+    if(searchMode==="name")res=res.filter(d=>multiMatch(d.n,w));
+    else if(searchMode==="mnn")res=res.filter(d=>d.t.some(t=>multiMatch(t.mn,w)));
+    else if(searchMode==="supplier")res=res.filter(d=>d.t.some(t=>multiMatch(t.s,w)));
+    else if(searchMode==="contract")res=res.filter(d=>d.t.some(t=>multiMatch(t.c,w)));
+  }
+  if(currentFilter!=="all")res=res.filter(d=>gs(d)===currentFilter);
+  res=[...res];
+  if(currentSort==="status")res.sort((x,y)=>(SO[gs(x)]??5)-(SO[gs(y)]??5)||x.n.localeCompare(y.n,"uk"));
+  else if(currentSort==="name")res.sort((x,y)=>x.n.localeCompare(y.n,"uk"));
+  else if(currentSort==="months")res.sort((x,y)=>(x.ml||999)-(y.ml||999));
+  else if(currentSort==="pct")res.sort((x,y)=>(y.pct||0)-(x.pct||0));
+  return res;
 }
 
 // ═══════ EXPORT ═══════
 function exportItems(statuses){
-const items=allData.filter(d=>statuses.includes(gs(d)));
-const rows=[["Назва","МНН","Од.вим.","Закуплено","По угоді","Залишок","% вибірки","Міс. залишок","Постачальник","Угода","Ціна"]];
-items.forEach(d=>{const mnn=d.t.length?d.t[0].mn:"";const sup=d.t.map(t=>t.s).join("; ");const con=d.t.map(t=>t.c).join("; ");const price=d.t.length&&d.t[0].p!=null?d.t[0].p:"";rows.push([d.n,mnn,d.du,d.dpq,d.dtq,d.drem,d.pct,d.ml===999?0:d.ml,sup,con,price])});
-const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
-const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");a.href="data:text/csv;base64,"+b64;a.download="export.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);
+  const items=allData.filter(d=>statuses.includes(gs(d)));
+  const rows=[["Назва","МНН","Од.вим.","Закуплено","По угоді","Залишок","% вибірки","Міс. залишок","Постачальник","Угода","Ціна"]];
+  items.forEach(d=>{const mnn=d.t.length?d.t[0].mn:"";const sup=d.t.map(t=>t.s).join("; ");const con=d.t.map(t=>t.c).join("; ");const price=d.t.length&&d.t[0].p!=null?d.t[0].p:"";rows.push([d.n,mnn,d.du,d.dpq,d.dtq,d.drem,d.pct,d.ml===999?0:d.ml,sup,con,price])});
+  const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
+  const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");a.href="data:text/csv;base64,"+b64;a.download="export.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
 // ═══════ RENDER ═══════
 function render(){
-const mc=allData.filter(d=>d.multi&&!d.alloc&&!d.chosen).length;
-const cBtn=document.getElementById("btn-conflicts");
-cBtn.classList.toggle("hidden",mc===0);document.getElementById("conflict-count").textContent=mc;
-updateNavBtns();
-const pw=document.getElementById("pinned-wrap");
-const sw=document.getElementById("search-wrap");
-if(pinnedSearch){
-const mLabel={name:"Назва:",mnn:"МНН:",supplier:"Постач.:",contract:"Угода:"}[searchMode]||"";
-pw.innerHTML='<div class="pinned-tag"><span style="color:var(--muted);font-size:11px">'+mLabel+'</span> <strong>'+esc(pinnedSearch)+'</strong><span class="x" onclick="unpinSearch()">×</span></div>';
-pw.classList.remove("hidden");sw.classList.add("hidden");
-}else{pw.classList.add("hidden");sw.classList.remove("hidden")}
-const el=document.getElementById("main-screen");
-if(currentView==="monitor")renderMonitor(el);
-else if(currentView==="agreements")renderAgreements(el);
-else if(currentView==="conflicts")renderConflicts(el);
+  const mc=allData.filter(d=>d.multi&&!d.alloc&&!d.chosen).length;
+  const cBtn=document.getElementById("btn-conflicts");
+  cBtn.classList.toggle("hidden",mc===0);document.getElementById("conflict-count").textContent=mc;
+  updateNavBtns();
+  // Pinned search display
+  const pw=document.getElementById("pinned-wrap");
+  const sw=document.getElementById("search-wrap");
+  if(pinnedSearch){
+    const mLabel={name:"Назва:",mnn:"МНН:",supplier:"Постач.:",contract:"Угода:"}[searchMode]||"";
+    pw.innerHTML='<div class="pinned-tag"><span style="color:var(--muted);font-size:11px">'+mLabel+'</span> <strong>'+esc(pinnedSearch)+'</strong><span class="x" onclick="unpinSearch()">×</span></div>';
+    pw.classList.remove("hidden");sw.classList.add("hidden");
+  }else{pw.classList.add("hidden");sw.classList.remove("hidden")}
+
+  const el=document.getElementById("main-screen");
+  if(currentView==="monitor")renderMonitor(el);
+  else if(currentView==="agreements")renderAgreements(el);
+  else if(currentView==="conflicts")renderConflicts(el);
 }
 
 function renderMonitor(el){
-const counts={all:allData.length,exhausted:0,critical:0,warning:0,ok:0,idle:0,none:0};
-allData.forEach(d=>counts[gs(d)]++);
-const items=filterData(allData);
-const q=getActiveSearch();
-const hq=searchMode==="name"?q:searchMode==="mnn"?q:"";
-let h='';
-h+='<div class="stats-bar">';
-for(const[k,l]of[["all","Усі"],["exhausted","Вибрано"],["critical","Критично"],["warning","Увага"],["ok","Норма"],["idle","Без руху"],["none","Без угоди"]]){
-h+=`<div class="stat-card${(k==='all'?(showAllCards&&currentFilter==='all'):currentFilter===k)?" active":""}" onclick="toggleFilter('${k}')"><div class="stat-num" style="color:${SCOL[k]}">${counts[k]||0}</div><div class="stat-lbl">${l}</div></div>`;
-}
-h+='</div>';
-if(lastUpdated)h+=`<div style="text-align:center;font-size:10px;color:var(--muted);margin-bottom:8px">Оновлено: ${lastUpdated.toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>`;
-h+='<div class="export-row"><span style="color:var(--muted)">Експорт:</span>';
-h+='<button class="exp-btn" style="color:var(--danger)" onclick="exportItems([\'exhausted\'])">Вибрано</button>';
-h+='<button class="exp-btn" style="color:var(--orange)" onclick="exportItems([\'critical\'])">Критично</button>';
-h+='<button class="exp-btn" style="color:var(--warn)" onclick="exportItems([\'warning\'])">Увага</button>';
-h+='<button class="exp-btn" style="color:#fff" onclick="exportItems([\'exhausted\',\'critical\',\'warning\'])">Усі проблемні</button>';
-h+='</div>';
-const showCards = (currentFilter !== "all") || showAllCards || !!getActiveSearch();
-if(showCards){
-h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
-for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Міс ↑"],["pct","% ↓"]])h+=`<button class="sort-btn${currentSort===k?" active":""}" onclick="currentSort='${k}';render()">${l}</button>`;
-h+=`</div><span style="font-size:12px;color:var(--muted)">${items.length} поз.</span></div>`;
-if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
-else items.forEach(d=>{
-const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
-const hasConflict=d.multi&&!d.alloc&&!d.chosen;
-const mnn=d.t.length?d.t[0].mn:"";
-const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
-const mbT=s==="idle"?"Без руху":d.ml<=0?"Вичерпано":d.ml===999?"—":d.ml+" міс";
-h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="expandedCard=expandedCard==='${esc(d.n).replace(/'/g,"\\'")}' ?null:'${esc(d.n).replace(/'/g,"\\'")}';render()">`;
-h+=`<div class="card-head"><div class="card-top">`;
-h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
-h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q:"")}</div>`;
-if(mnn)h+=`<div class="mnn-line">${hl(mnn,searchMode==="mnn"?q:"")}</div>`;
-if(hasConflict)h+=`<div class="conflict-hint">⚡ ${d.multi.length} постачальники — оберіть</div>`;
-if(d.chosen)h+=`<div class="chosen-hint">✓ ${esc(d.chosen)}</div>`;
-h+=`</div><div class="card-qty"><div class="num">${fmt(d.dpq)}</div><div class="unit">${esc(d.du)}</div></div></div></div>`;
-if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${d.pct}%</span></div>`;
-h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
-h+=`<div class="detail-grid"><div class="mini-stat"><div class="lbl">Закуплено</div><div class="val">${fmt(d.dpq)} ${esc(d.du)}</div></div>`;
-h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
-h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
-h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
-if(d.multi&&!d.alloc){
-h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено — внесіть у лист "Розподіл" файлу тендерів</div></div>`}
-if(d.multi&&d.alloc){
-h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
-d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
-h+=`</div>`}
-h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
-d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
-if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
-h+=`</div></div>`;
-});
-}else{
-h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
-}
-el.innerHTML=h;
+  const counts={all:allData.length,exhausted:0,critical:0,warning:0,ok:0,idle:0,none:0};
+  allData.forEach(d=>counts[gs(d)]++);
+  const items=filterData(allData);
+  const q=getActiveSearch();
+  const hq=searchMode==="name"?q:searchMode==="mnn"?q:"";
+  
+  let h='';
+  // Stats
+  h+='<div class="stats-bar">';
+  for(const[k,l]of[["all","Усі"],["exhausted","Вибрано"],["critical","Критично"],["warning","Увага"],["ok","Норма"],["idle","Без руху"],["none","Без угоди"]]){
+    h+=`<div class="stat-card${(k==='all'?(showAllCards&&currentFilter==='all'):currentFilter===k)?" active":""}" onclick="toggleFilter('${k}')"><div class="stat-num" style="color:${SCOL[k]}">${counts[k]||0}</div><div class="stat-lbl">${l}</div></div>`;
+  }
+  h+='</div>';
+  // Updated
+  if(lastUpdated)h+=`<div style="text-align:center;font-size:10px;color:var(--muted);margin-bottom:8px">Оновлено: ${lastUpdated.toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>`;
+  // Export
+  h+='<div class="export-row"><span style="color:var(--muted)">Експорт:</span>';
+  h+='<button class="exp-btn" style="color:var(--danger)" onclick="exportItems([\'exhausted\'])">Вибрано</button>';
+  h+='<button class="exp-btn" style="color:var(--orange)" onclick="exportItems([\'critical\'])">Критично</button>';
+  h+='<button class="exp-btn" style="color:var(--warn)" onclick="exportItems([\'warning\'])">Увага</button>';
+  h+='<button class="exp-btn" style="color:#fff" onclick="exportItems([\'exhausted\',\'critical\',\'warning\'])">Усі проблемні</button>';
+  h+='</div>';
+  // Cards — only show when a filter is selected or search is active
+  const showCards = (currentFilter !== "all") || showAllCards || !!getActiveSearch();
+  if(showCards){
+  h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
+  for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Міс ↑"],["pct","% ↓"]])h+=`<button class="sort-btn${currentSort===k?" active":""}" onclick="currentSort='${k}';render()">${l}</button>`;
+  h+=`</div><span style="font-size:12px;color:var(--muted)">${items.length} поз.</span></div>`;
+  if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
+  else items.forEach(d=>{
+    const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
+    const hasConflict=d.multi&&!d.alloc&&!d.chosen;
+    const mnn=d.t.length?d.t[0].mn:"";
+    const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
+    const mbT=s==="idle"?"Без руху":d.ml<=0?"Вичерпано":d.ml===999?"—":d.ml+" міс";
+    h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="expandedCard=expandedCard==='${esc(d.n).replace(/'/g,"\\'")}' ?null:'${esc(d.n).replace(/'/g,"\\'")}';render()">`;
+    h+=`<div class="card-head"><div class="card-top">`;
+    h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
+    h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q:"")}</div>`;
+    if(mnn)h+=`<div class="mnn-line">${hl(mnn,searchMode==="mnn"?q:"")}</div>`;
+    if(hasConflict)h+=`<div class="conflict-hint">⚡ ${d.multi.length} постачальники — оберіть</div>`;
+    if(d.chosen)h+=`<div class="chosen-hint">✓ ${esc(d.chosen)}</div>`;
+    h+=`</div><div class="card-qty"><div class="num">${fmt(d.dpq)}</div><div class="unit">${esc(d.du)}</div></div></div></div>`;
+    if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${d.pct}%</span></div>`;
+    // Detail
+    h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
+    h+=`<div class="detail-grid"><div class="mini-stat"><div class="lbl">Закуплено</div><div class="val">${fmt(d.dpq)} ${esc(d.du)}</div></div>`;
+    h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
+    h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
+    h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
+    if(d.multi&&!d.alloc){
+      h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено — внесіть у лист "Розподіл" файлу тендерів</div></div>`}
+    if(d.multi&&d.alloc){
+      h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
+      d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
+      h+=`</div>`}
+    h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
+    d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
+    if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
+    h+=`</div></div>`;
+  });
+  }else{
+    h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
+  }
+  el.innerHTML=h;
 }
 
 function renderAgreements(el){
-const q=getActiveSearch();
-let agrs={};allTenders.forEach(t=>{const k=t.supplier+"|||"+t.contract;if(!agrs[k])agrs[k]={supplier:t.supplier,contract:t.contract,items:[]};agrs[k].items.push(t)});
-let arr=Object.values(agrs);
-if(q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);
-if(searchMode==="name")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.commercial,w)));
-else if(searchMode==="mnn")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.mnn,w)));
-else if(searchMode==="supplier")arr=arr.filter(a=>multiMatch(a.supplier,w));
-else if(searchMode==="contract")arr=arr.filter(a=>multiMatch(a.contract,w));
-}
-arr.sort((a,b)=>a.supplier.localeCompare(b.supplier,"uk"));
-let h=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${arr.length} угод</div>`;
-arr.forEach(a=>{
-const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
-const tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
-h+=`<div class="agr-card${isE?" expanded":""}" onclick="expandedAgr=expandedAgr==='${k.replace(/'/g,"\\'")}'?null:'${k.replace(/'/g,"\\'")}';render()">`;
-h+=`<div class="agr-sup">${hl(a.supplier,searchMode==="supplier"?q:"")}</div>`;
-h+=`<div class="agr-con">${hl(a.contract,searchMode==="contract"?q:"")}</div>`;
-h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
-h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
-a.items.forEach(it=>{
-const pm=allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60)));
-let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit;
-if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60));const pk=tc?tc.pk:1;const consRaw=pm.pq;const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const remRaw=tc?(tc.cq-consRaw):it.qty-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;consDisp=consInTU;remDisp=remInTU;pctDisp=pm.pct;if(pk>1)dispUnit=it.unit}
-h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
-h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
-h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
-if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
-if(consDisp!=null){h+=`<div class="row"><span>Вибрано:</span><strong style="color:${remDisp<=0?"var(--danger)":"var(--green)"}">${fmt(consDisp)} (зал: ${fmt(remDisp)})</strong></div>`;if(pctDisp!=null)h+=`<div class="row"><span>Вибірка:</span><strong style="color:${pctDisp>=100?"var(--danger)":pctDisp>=80?"var(--warn)":"var(--green)"}">${pctDisp}%</strong></div>`}
-else h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">Не знайдено в закупівлях</div>`;
-h+=`</div>`;
-});
-h+=`</div></div>`;
-});
-el.innerHTML=h;
+  const q=getActiveSearch();
+  let agrs={};allTenders.forEach(t=>{const k=t.supplier+"|||"+t.contract;if(!agrs[k])agrs[k]={supplier:t.supplier,contract:t.contract,items:[]};agrs[k].items.push(t)});
+  let arr=Object.values(agrs);
+  if(q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);
+    if(searchMode==="name")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.commercial,w)));
+    else if(searchMode==="mnn")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.mnn,w)));
+    else if(searchMode==="supplier")arr=arr.filter(a=>multiMatch(a.supplier,w));
+    else if(searchMode==="contract")arr=arr.filter(a=>multiMatch(a.contract,w));
+  }
+  arr.sort((a,b)=>a.supplier.localeCompare(b.supplier,"uk"));
+  let h=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${arr.length} угод</div>`;
+  arr.forEach(a=>{
+    const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
+    const tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
+    h+=`<div class="agr-card${isE?" expanded":""}" onclick="expandedAgr=expandedAgr==='${k.replace(/'/g,"\\'")}'?null:'${k.replace(/'/g,"\\'")}';render()">`;
+    h+=`<div class="agr-sup">${hl(a.supplier,searchMode==="supplier"?q:"")}</div>`;
+    h+=`<div class="agr-con">${hl(a.contract,searchMode==="contract"?q:"")}</div>`;
+    h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
+    h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
+    a.items.forEach(it=>{
+      // Find matched purchase data
+      const pm=allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60)));
+      let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit;
+      if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60));const pk=tc?tc.pk:1;const consRaw=pm.pq;const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const remRaw=tc?(tc.cq-consRaw):it.qty-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;consDisp=consInTU;remDisp=remInTU;pctDisp=pm.pct;if(pk>1)dispUnit=it.unit}
+      h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
+      h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
+      h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
+      if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
+      if(consDisp!=null){h+=`<div class="row"><span>Вибрано:</span><strong style="color:${remDisp<=0?"var(--danger)":"var(--green)"}">${fmt(consDisp)} (зал: ${fmt(remDisp)})</strong></div>`;if(pctDisp!=null)h+=`<div class="row"><span>Вибірка:</span><strong style="color:${pctDisp>=100?"var(--danger)":pctDisp>=80?"var(--warn)":"var(--green)"}">${pctDisp}%</strong></div>`}
+      else h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">Не знайдено в закупівлях</div>`;
+      h+=`</div>`;
+    });
+    h+=`</div></div>`;
+  });
+  el.innerHTML=h;
 }
 
 function renderConflicts(el){
-const conflicts=allData.filter(d=>d.multi&&!d.alloc);
-if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл внесено у лист "Розподіл" файлу тендерів</div></div>';return}
-let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Внесіть розподіл у лист <strong>"Розподіл"</strong> файлу тендерів на Google Drive, потім натисніть "Оновити".</div>';
-conflicts.forEach(d=>{
-h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
-d.multi.forEach(sup=>{
-const supItems=d.allM.filter(t=>t.s===sup);
-const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
-h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div></div>`;
-});
-h+=`</div>`;
-});
-el.innerHTML=h;
+  const conflicts=allData.filter(d=>d.multi&&!d.alloc);
+  if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл внесено у лист "Розподіл" файлу тендерів</div></div>';return}
+  let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Внесіть розподіл у лист <strong>"Розподіл"</strong> файлу тендерів на Google Drive, потім натисніть "Оновити".</div>';
+  conflicts.forEach(d=>{
+    h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
+    d.multi.forEach(sup=>{
+      const supItems=d.allM.filter(t=>t.s===sup);
+      const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
+      h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div></div>`;
+    });
+    h+=`</div>`;
+  });
+  el.innerHTML=h;
 }
 
 // ═══════ INIT ═══════
 (function(){
-const c=loadCache();
-if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;
-if(c.purchases)parsedPurchases=c.purchases;
-showMain();fetchDriveBackground();
-}
+  const c=loadCache();
+  if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;
+    if(c.purchases)parsedPurchases=c.purchases;
+    showMain();fetchDriveBackground();
+  }
 })();
 </script>
 </body>
