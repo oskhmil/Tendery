@@ -262,7 +262,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v25";
+const CACHE_KEY = "tendertrack_v26";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -283,6 +283,7 @@ let f6Sort="daysLeft";     // daysLeft/name/rate/stock
 let f6Search="";
 let f6ExpandedCard=null;
 let f6ShowAllCards=false;
+let f6MonthsEnabled=null;  // null=all enabled; array of booleans otherwise
 
 function toggleFilter(k){
 if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
@@ -443,24 +444,39 @@ months.sort((a,b)=>a.periodStart-b.periodStart);
 return months;
 }
 
-// Analyze all drugs across months for given horizon (days)
-function analyzeF6(months,horizonDays){
-if(!months.length)return{items:[],periodStart:null,periodEnd:null};
+// Analyze all drugs across months for given horizon (days).
+// enabled: optional array of booleans same length as months; if provided, only those months count.
+function analyzeF6(months,horizonDays,enabled){
+if(!months.length)return{items:[],periodStart:null,periodEnd:null,daysTotal:0};
+const mask=Array.isArray(enabled)&&enabled.length===months.length?enabled:months.map(()=>true);
+const activeIdx=[];for(let i=0;i<months.length;i++)if(mask[i])activeIdx.push(i);
+if(!activeIdx.length)return{items:[],periodStart:null,periodEnd:null,daysTotal:0};
+const firstActive=activeIdx[0],lastActive=activeIdx[activeIdx.length-1];
+const periodStart=months[firstActive].periodStart,periodEnd=months[lastActive].periodEnd;
+const daysTotal=activeIdx.reduce((s,i)=>s+months[i].days,0);
+
 const allNames=new Set();
-months.forEach(m=>Object.keys(m.drugs).forEach(n=>allNames.add(n)));
+activeIdx.forEach(i=>Object.keys(months[i].drugs).forEach(n=>allNames.add(n)));
+
 const items=[];
 for(const name of allNames){
 let firstIdx=-1,totalUsed=0,totalDays=0,unit="",stock=0;
 const monthly=[];
+// Iterate all months (to keep monthly display consistent), but only count active ones
 for(let i=0;i<months.length;i++){
 const d=months[i].drugs[name];
 monthly.push(d||null);
 if(!d)continue;
 if(!unit)unit=d.unit;
+if(!mask[i])continue;
 const active=(d.used>0||d.income>0||d.start>0||d.end>0);
 if(active&&firstIdx<0)firstIdx=i;
 if(firstIdx>=0&&i>=firstIdx){totalUsed+=d.used;totalDays+=months[i].days}
-if(d.end!==undefined)stock=d.end;
+}
+// Stock = end of last enabled month where drug has data
+for(let k=activeIdx.length-1;k>=0;k--){
+const d=months[activeIdx[k]].drugs[name];
+if(d){stock=d.end;break}
 }
 if(firstIdx<0)continue;
 const dailyRate=totalDays>0?totalUsed/totalDays:0;
@@ -469,7 +485,7 @@ const deficit=Math.max(0,need-stock);
 const daysLeft=dailyRate>0?stock/dailyRate:99999;
 items.push({name,unit,stock,totalUsed,totalDays,dailyRate,firstMonth:months[firstIdx].sheet,monthly,need,deficit,daysLeft});
 }
-return{items,periodStart:months[0].periodStart,periodEnd:months[months.length-1].periodEnd};
+return{items,periodStart,periodEnd,daysTotal};
 }
 
 function f6Status(it,horizon){
@@ -927,7 +943,11 @@ el.innerHTML=h;
 
 function renderConsumption(el){
 if(!f6Months.length){el.innerHTML='';return}
-const analysis=analyzeF6(f6Months,f6Horizon);
+// Months mask
+if(!Array.isArray(f6MonthsEnabled)||f6MonthsEnabled.length!==f6Months.length){
+f6MonthsEnabled=f6Months.map(()=>true);
+}
+const analysis=analyzeF6(f6Months,f6Horizon,f6MonthsEnabled);
 const items=analysis.items;
 const q=f6Search.trim().toLowerCase();
 let filtered=items;
@@ -935,26 +955,47 @@ if(q){const w=q.split(/\s+/).filter(Boolean);filtered=filtered.filter(it=>{const
 const counts={all:items.length,deficit:0,critical:0,warning:0,ok:0};
 items.forEach(it=>{counts[f6Status(it,f6Horizon)]++});
 if(f6Filter!=="all")filtered=filtered.filter(it=>f6Status(it,f6Horizon)===f6Filter);
-// sort
 filtered=[...filtered];
 if(f6Sort==="daysLeft")filtered.sort((a,b)=>a.daysLeft-b.daysLeft);
 else if(f6Sort==="name")filtered.sort((a,b)=>a.name.localeCompare(b.name,"uk"));
 else if(f6Sort==="rate")filtered.sort((a,b)=>b.dailyRate-a.dailyRate);
 else if(f6Sort==="stock")filtered.sort((a,b)=>a.stock-b.stock);
 
-// Header: period info + horizon selector + search
 let h='';
+
+// Search — first thing (like in purchases)
+h+='<div class="search-wrap" style="margin-bottom:10px"><span class="search-ico">🔍</span>';
+h+=`<input id="f6-search" placeholder="Пошук препарату..." oninput="onF6SearchInput(this.value)"></div>`;
+
+// Period + months checkboxes + horizon
+const enabledCount=f6MonthsEnabled.filter(Boolean).length;
 h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
-h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Період аналізу</div>';
-h+=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${fmtDate(analysis.periodStart)} — ${fmtDate(analysis.periodEnd)} <span style="color:var(--muted);font-weight:400">(${f6Months.length} міс.)</span></div>`;
-h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Горизонт планування</div>';
+// Period header
+if(analysis.periodStart){
+h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Період аналізу (${analysis.daysTotal} днів)</div>`;
+h+=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${fmtDate(analysis.periodStart)} — ${fmtDate(analysis.periodEnd)}</div>`;
+}else{
+h+='<div style="font-size:13px;color:var(--danger);margin-bottom:8px">⚠️ Не обрано жодного місяця</div>';
+}
+// Months checkboxes
+h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Які місяці враховувати</div>';
+h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
+f6Months.forEach((m,i)=>{
+const on=f6MonthsEnabled[i];
+h+=`<button class="mode-btn${on?" active":""}" onclick="toggleF6Month(${i})" style="padding:5px 10px">${on?"✓ ":""}${esc(m.sheet)}</button>`;
+});
+if(f6Months.length>1){
+h+=`<button class="sort-btn" style="margin-left:auto" onclick="setAllF6Months(true)">Усі</button>`;
+h+=`<button class="sort-btn" onclick="setAllF6Months(false)">Жодного</button>`;
+}
+h+='</div>';
+// Horizon
+h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Горизонт планування — на скільки днів вперед рахувати потребу</div>';
 h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
 for(const d of [30,60,90,180])h+=`<button class="mode-btn${f6Horizon===d?" active":""}" onclick="f6Horizon=${d};render()">${d} днів</button>`;
-h+='</div></div>';
-
-// Search
-h+='<div class="search-wrap" style="margin-bottom:10px"><span class="search-ico">🔍</span>';
-h+=`<input id="f6-search" placeholder="Пошук препарату..." value="${esc(f6Search)}" oninput="f6Search=this.value;clearTimeout(window._f6st);window._f6st=setTimeout(render,200)"></div>`;
+h+='</div>';
+h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4;font-style:italic">Темп (од/день) × горизонт = потреба. Потреба − залишок = дефіцит (скільки докупити).</div>';
+h+='</div>';
 
 // Stats bar
 h+='<div class="stats-bar" style="grid-template-columns:repeat(5,1fr)">';
@@ -978,9 +1019,9 @@ h+='</div>';
 const showCards=(f6Filter!=="all")||f6ShowAllCards||!!q;
 if(!showCards){
 h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
-el.innerHTML=h;return;
+el.innerHTML=h;restoreF6SearchFocus();return;
 }
-if(!filtered.length){h+='<div class="empty-state">Нічого не знайдено</div>';el.innerHTML=h;return}
+if(!filtered.length){h+='<div class="empty-state">Нічого не знайдено</div>';el.innerHTML=h;restoreF6SearchFocus();return}
 
 for(const it of filtered){
 const st=f6Status(it,f6Horizon);
@@ -988,7 +1029,7 @@ const stColor={deficit:"var(--danger)",critical:"var(--orange)",warning:"var(--w
 const stEmoji={deficit:"🔴",critical:"🟠",warning:"🟡",ok:"🟢"}[st];
 const pct=Math.min(it.daysLeft/f6Horizon*100,100);
 const isExp=f6ExpandedCard===it.name;
-const linkedMonitor=allData.find(d=>d.n===it.name);
+const linkedMonitor=findInMonitor(it.name);
 h+=`<div class="card${isExp?" expanded":""}" onclick="f6ExpandedCard=f6ExpandedCard===${JSON.stringify(it.name)}?null:${JSON.stringify(it.name)};render()">`;
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<div style="font-size:22px;line-height:1;margin-top:2px">${stEmoji}</div>`;
@@ -1003,39 +1044,135 @@ h+=`<div class="mini-stat"><div class="lbl">Використано за пері
 h+=`<div class="mini-stat"><div class="lbl">Потреба на ${f6Horizon}д</div><div class="val">${fmt(Math.round(it.need))} ${esc(it.unit)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">Дефіцит</div><div class="val" style="color:${it.deficit>0?"var(--danger)":"var(--green)"}">${it.deficit>0?fmt(Math.round(it.deficit))+" "+esc(it.unit):"немає"}</div></div>`;
 h+=`</div>`;
-// Monthly breakdown
 h+='<div style="font-size:12px;font-weight:600;margin-bottom:6px">По місяцях:</div>';
 h+='<div style="display:grid;grid-template-columns:1fr;gap:4px">';
 for(let i=0;i<f6Months.length;i++){
 const m=f6Months[i],d=it.monthly[i];
-h+=`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 8px;background:rgba(255,255,255,.04);border-radius:6px">`;
-h+=`<span style="font-weight:600">${esc(m.sheet)} <span style="color:var(--muted);font-weight:400">(${m.days}д)</span></span>`;
+const on=f6MonthsEnabled[i];
+h+=`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 8px;background:${on?"rgba(255,255,255,.04)":"rgba(255,255,255,.015)"};border-radius:6px;${on?"":"opacity:.5"}">`;
+h+=`<span style="font-weight:600">${esc(m.sheet)} <span style="color:var(--muted);font-weight:400">(${m.days}д${on?"":", вимк."})</span></span>`;
 if(d)h+=`<span>поч: <strong>${fmt(d.start)}</strong> · +${fmt(d.income)} · −${fmt(d.used)} · кін: <strong>${fmt(d.end)}</strong></span>`;
 else h+=`<span style="color:var(--muted);font-style:italic">—</span>`;
 h+=`</div>`;
 }
 h+='</div>';
-// Cross-link to monitor
-if(linkedMonitor)h+=`<button class="exp-btn" style="margin-top:10px;background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent);font-size:12px;padding:8px 14px;width:100%" onclick="gotoMonitor(${JSON.stringify(it.name)})">📦 Показати в «Моніторинг закупівель»</button>`;
+if(linkedMonitor)h+=`<button class="exp-btn" style="margin-top:10px;background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent);font-size:12px;padding:8px 14px;width:100%" onclick="gotoMonitor(${JSON.stringify(linkedMonitor.n)})">📦 Показати в «Моніторинг закупівель»</button>`;
 else h+=`<div style="margin-top:10px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px;font-size:11px;color:var(--muted);text-align:center">Не знайдено в закупівлях/тендерах</div>`;
 h+=`</div></div>`;
 }
-el.innerHTML=h;
+el.innerHTML=h;restoreF6SearchFocus();
+}
+
+// Restore focus and value into #f6-search after re-render
+function restoreF6SearchFocus(){
+const i=document.getElementById("f6-search");
+if(!i)return;
+i.value=f6Search;
+if(window._f6SearchFocused){i.focus();const L=i.value.length;i.setSelectionRange(L,L)}
+}
+// Track focus lifecycle so that clicks outside the search box don't yank focus back
+document.addEventListener("click",(e)=>{
+const t=e.target;
+if(!t||(t.id!=="f6-search"))window._f6SearchFocused=false;
+},true);
+
+let _f6SearchTimer=null;
+function onF6SearchInput(v){
+window._f6SearchFocused=true;
+f6Search=v;
+clearTimeout(_f6SearchTimer);
+_f6SearchTimer=setTimeout(()=>{render()},120);
+}
+
+function toggleF6Month(i){
+if(!Array.isArray(f6MonthsEnabled)||f6MonthsEnabled.length!==f6Months.length)f6MonthsEnabled=f6Months.map(()=>true);
+f6MonthsEnabled[i]=!f6MonthsEnabled[i];
+render();
+}
+function setAllF6Months(on){f6MonthsEnabled=f6Months.map(()=>!!on);render()}
+
+// Fuzzy-find a monitor item for a Форма 6 drug name.
+// Uses the full matchAll rule set: brand + form + container + dose + volume + pack size + suffix.
+function findInMonitor(name){
+if(!allData.length)return null;
+// 1. Exact match
+const exact=allData.find(d=>d.n===name);if(exact)return exact;
+const nk=monitorKey(name);
+for(const d of allData){if(monitorKey(d.n)===nk)return d}
+// 2. Strict multi-signal match
+const nB=getBrand(name),nF=getForm(name),nC=getContainer(name);
+const nD=getDoses(name),nV=getVolumes(name),nPk=extractPkStrict(name);
+const nSuf=brandSuffix(nB);
+if(!nB.length)return null;
+const cands=[];
+for(const d of allData){
+const dB=getBrand(d.n);
+if(!tokMatch(nB,dB))continue;
+// If both have second token and it's a manufacturer suffix (after dash) — it must match
+if(nB.length>=2&&dB.length>=2){
+const n2=nB[1].split("-")[0],d2=dB[1].split("-")[0];
+if(n2&&d2){
+const ns=stemUk(n2),ds=stemUk(d2);
+if(ns.length>=4&&ds.length>=4&&ns!==ds&&!ns.startsWith(ds)&&!ds.startsWith(ns))continue;
+}
+}
+// Manufacturer suffix after dash in first token (Амітриптилін-3Н vs Амітриптилін-ОЗ)
+const dSuf=brandSuffix(dB);
+if(nSuf&&dSuf&&nSuf!==dSuf)continue;
+// Manufacturer suffix in second token (ГІДРОХЛОРИД-3Н vs ГІДРОХЛОРИД-ОЗ)
+if(nB.length>=2&&dB.length>=2){
+const n2p=nB[1].split("-"),d2p=dB[1].split("-");
+if(n2p.length>=2&&d2p.length>=2){
+const n2s=n2p.slice(1).join("-"),d2s=d2p.slice(1).join("-");
+if(n2s&&d2s&&n2s!==d2s)continue;
+}
+}
+// Dosage form
+if(!formsOk(nF,getForm(d.n)))continue;
+// Container
+if(!containersOk(nC,getContainer(d.n)))continue;
+// Pack size: if both have explicit № and they differ, reject
+const dPk=extractPkStrict(d.n);
+if(nPk>0&&dPk>0&&nPk!==dPk)continue;
+// Dose
+const dD=getDoses(d.n);
+if(nD.size&&dD.size&&!setsOverlap(nD,dD))continue;
+// Volume
+const dV=getVolumes(d.n);
+if(nV.size&&dV.size&&!setsOverlap(nV,dV))continue;
+cands.push(d);
+}
+if(cands.length===0)return null;
+if(cands.length===1)return cands[0];
+// Prefer candidate with matching first two tokens
+for(const c of cands){const cb=getBrand(c.n);if(cb.length>=2&&nB.length>=2&&cb[0]===nB[0]&&cb[1]===nB[1])return c}
+return cands[0];
+}
+function monitorKey(s){return s.toUpperCase().replace(/[®.,;:"'`\u2019]/g," ").replace(/\s+/g," ").trim()}
+// Extract manufacturer suffix after first dash in first brand token (e.g. АМІТРИПТИЛІН-3Н → "3Н")
+function brandSuffix(tokens){
+if(!tokens||!tokens.length)return null;
+const parts=tokens[0].split("-");
+if(parts.length<2)return null;
+return parts.slice(1).join("-");
 }
 
 // Cross-navigation: jump to monitor tab with card expanded
 function gotoMonitor(drugName){
 if(allData.length===0){alert("Дані закупівель ще не завантажено. Спочатку відкрийте «Моніторинг закупівель».");return}
 currentView="monitor";currentFilter="all";showAllCards=true;
-searchMode="name";currentSearch=drugName;pinnedSearch="";
+// Use first meaningful word (brand) as search — full name has punctuation that breaks multi-word AND
+const brand=drugName.match(/[А-ЯA-ZІЇЄҐа-яa-zіїєґ][А-ЯA-Zа-яa-zІЇЄҐіїєґ\-]{2,}/);
+const searchToken=brand?brand[0]:drugName.slice(0,10);
+searchMode="name";currentSearch=searchToken;pinnedSearch="";
 expandedCard=drugName;
-const si=document.getElementById("search-input");if(si)si.value=drugName;
+const si=document.getElementById("search-input");if(si)si.value=searchToken;
 showMain();updateNavBtns();
 setTimeout(()=>{const cards=document.querySelectorAll(".card.expanded");if(cards.length)cards[0].scrollIntoView({behavior:"smooth",block:"center"})},100);
 }
 
 function exportF6(statuses){
-const analysis=analyzeF6(f6Months,f6Horizon);
+const analysis=analyzeF6(f6Months,f6Horizon,f6MonthsEnabled);
 const items=analysis.items.filter(it=>statuses.includes(f6Status(it,f6Horizon)));
 const rows=[["Назва","Од.вим.","Залишок","Використано за період","Темп/день","Днів вистачить","Потреба на "+f6Horizon+"д","Дефіцит","Перший місяць активності"]];
 items.forEach(it=>rows.push([it.name,it.unit,it.stock,it.totalUsed,it.dailyRate.toFixed(2),it.daysLeft>=9999?"∞":it.daysLeft.toFixed(1),Math.round(it.need),Math.round(it.deficit),it.firstMonth]));
