@@ -171,6 +171,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
 <button class="hbtn" id="btn-consumption" onclick="switchView('consumption')">Моніторинг розходу</button>
+<button class="hbtn" id="btn-orders" onclick="switchView('orders')">Замовлення</button>
 <button class="hbtn" id="btn-agreements" onclick="switchView('agreements')">Угоди</button>
 <button class="hbtn amber hidden" id="btn-conflicts" onclick="switchView('conflicts')">⚡ <span id="conflict-count">0</span></button>
 <button class="hbtn blue" id="btn-refresh" onclick="loadFromDrive(true)">☁️ Оновити</button>
@@ -212,6 +213,11 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="home-tile-ico" style="background:linear-gradient(135deg,rgba(59,130,246,.25),rgba(59,130,246,.08));color:#60a5fa">📊</div>
 <div class="home-tile-title">Моніторинг розходу</div>
 <div class="home-tile-desc">Аналіз розходу за Формою 6, середньоденне використання, прогноз потреби на 30/60/90/180 днів</div>
+</div>
+<div class="home-tile" onclick="enterSection('orders')">
+<div class="home-tile-ico" style="background:linear-gradient(135deg,rgba(251,191,36,.25),rgba(251,191,36,.08));color:#fbbf24">📝</div>
+<div class="home-tile-title">Замовлення</div>
+<div class="home-tile-desc">Формування замовлень постачальникам на основі дефіциту з розходу та залишків по тендерних угодах</div>
 </div>
 </div>
 </div>
@@ -262,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v32";
+const CACHE_KEY = "tendertrack_v33";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -284,6 +290,13 @@ let f6Search="";
 let f6ExpandedCard=null;
 let f6ShowAllCards=false;
 let f6MonthsEnabled=null;  // null=all enabled; array of booleans otherwise
+
+// Замовлення state
+let ordersHorizon=30;                  // days to cover
+let ordersSupplierChoice={};           // {drugName: "supplierName"}
+let ordersExcluded={};                 // {drugName: true} — exclude from orders
+let ordersSearch="";
+let ordersExpandedSupplier=null;
 
 function toggleFilter(k){
 if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
@@ -742,7 +755,7 @@ function showMain(){showScreen("main");render()}
 function showHome(){showScreen("home")}
 function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pinnedSearch="";expandedCard=null;f6ExpandedCard=null;const si=document.getElementById("search-input");if(si)si.value="";showHome()}
 function enterSection(v){
-currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;
+currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;ordersExpandedSupplier=null;
 if(v==="consumption"){
 if(f6Months.length>0){
 showMain();
@@ -751,15 +764,27 @@ if(allData.length===0)fetchDriveBackground();
 }else{showScreen("f6start")}
 return;
 }
+if(v==="orders"){
+// Orders needs BOTH datasets. Preload whichever is missing.
+if(allData.length===0)fetchDriveBackground();
+if(f6Months.length===0)fetchF6Background();
+showMain();
+return;
+}
 // monitor / agreements / conflicts — need purchases data loaded
 if(allData.length>0){showMain()}else{showScreen("start")}
 }
 
 // ═══════ VIEW SWITCHING ═══════
 function switchView(v){
-currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;
+currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;ordersExpandedSupplier=null;
 if(v==="consumption"){
 if(f6Months.length===0){showScreen("f6start");updateNavBtns();return}
+showMain();updateNavBtns();return;
+}
+if(v==="orders"){
+if(allData.length===0)fetchDriveBackground();
+if(f6Months.length===0)fetchF6Background();
 showMain();updateNavBtns();return;
 }
 if((v==="monitor"||v==="agreements"||v==="conflicts")&&allData.length===0){showScreen("start");updateNavBtns();return}
@@ -768,6 +793,7 @@ render();updateNavBtns();
 function updateNavBtns(){
 document.getElementById("btn-monitor").classList.toggle("active",currentView==="monitor");
 document.getElementById("btn-consumption").classList.toggle("active",currentView==="consumption");
+document.getElementById("btn-orders").classList.toggle("active",currentView==="orders");
 document.getElementById("btn-agreements").classList.toggle("active",currentView==="agreements");
 document.getElementById("btn-conflicts").classList.toggle("active",currentView==="conflicts");
 }
@@ -779,9 +805,12 @@ function onSearchInput(v){
 document.getElementById("pin-btn").style.display=v.trim()?"block":"none";
 clearTimeout(_searchTimer);
 if(currentView==="consumption"){
-// For Розхід — route to f6Search, no pinning needed
 document.getElementById("pin-btn").style.display="none";
 f6Search=v;
+_searchTimer=setTimeout(()=>{render()},120);
+}else if(currentView==="orders"){
+document.getElementById("pin-btn").style.display="none";
+ordersSearch=v;
 _searchTimer=setTimeout(()=>{render()},120);
 }else{
 _searchTimer=setTimeout(()=>{currentSearch=v.trim();render()},200);
@@ -824,17 +853,20 @@ function render(){
 const mc=allData.filter(d=>d.multi&&!d.alloc&&!d.chosen).length;
 const cBtn=document.getElementById("btn-conflicts");
 const isConsumption=(currentView==="consumption");
-// Agreements / Conflicts / ☁️ / 📂 belong to purchases section — hide on consumption
-document.getElementById("btn-agreements").classList.toggle("hidden",isConsumption);
-cBtn.classList.toggle("hidden",isConsumption||mc===0);
+const isOrders=(currentView==="orders");
+const isPurchases=(!isConsumption&&!isOrders);
+// Угоди/Конфлікти — тільки для Закупівель
+document.getElementById("btn-agreements").classList.toggle("hidden",!isPurchases);
+cBtn.classList.toggle("hidden",!isPurchases||mc===0);
 document.getElementById("conflict-count").textContent=mc;
-document.getElementById("btn-refresh").classList.toggle("hidden",isConsumption);
-document.getElementById("btn-upload").classList.toggle("hidden",isConsumption);
-// On consumption, add its own refresh/upload buttons
+// ☁️/📂 Закупівель — тільки на вкладках Закупівель
+document.getElementById("btn-refresh").classList.toggle("hidden",!isPurchases);
+document.getElementById("btn-upload").classList.toggle("hidden",!isPurchases);
+// ☁️/📂 Розходу — тільки на Розході
 document.getElementById("btn-f6-refresh").classList.toggle("hidden",!isConsumption);
 document.getElementById("btn-f6-upload").classList.toggle("hidden",!isConsumption);
 updateNavBtns();
-// Unified sticky search — shown for both views, with different state
+// Unified sticky search — shown for monitor views; for orders too (пошук по постачальнику/назві)
 const pw=document.getElementById("pinned-wrap");
 const sw=document.getElementById("search-wrap");
 const searchArea=document.getElementById("search-area");
@@ -843,12 +875,18 @@ const searchInput=document.getElementById("search-input");
 const pinBtn=document.getElementById("pin-btn");
 searchArea.classList.remove("hidden");
 if(isConsumption){
-// Розхід: hide mode buttons & pin, show search input with f6Search value
 modeRow.classList.add("hidden");
 pw.classList.add("hidden");
 sw.classList.remove("hidden");
 searchInput.placeholder="Пошук препарату...";
 if(document.activeElement!==searchInput)searchInput.value=f6Search;
+pinBtn.style.display="none";
+}else if(isOrders){
+modeRow.classList.add("hidden");
+pw.classList.add("hidden");
+sw.classList.remove("hidden");
+searchInput.placeholder="Пошук препарату або постачальника...";
+if(document.activeElement!==searchInput)searchInput.value=ordersSearch;
 pinBtn.style.display="none";
 }else{
 modeRow.classList.remove("hidden");
@@ -866,6 +904,7 @@ if(document.activeElement!==searchInput)searchInput.value=currentSearch;
 const el=document.getElementById("main-screen");
 if(currentView==="monitor")renderMonitor(el);
 else if(currentView==="consumption")renderConsumption(el);
+else if(currentView==="orders")renderOrders(el);
 else if(currentView==="agreements")renderAgreements(el);
 else if(currentView==="conflicts")renderConflicts(el);
 }
@@ -1201,6 +1240,256 @@ const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement
 
 function fmtDate(d){if(!d)return"—";return d.toLocaleDateString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric"})}
 function hlPlain(text,q){if(!q)return esc(text);const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return esc(text);const re=new RegExp("("+words.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");return esc(text).replace(re,"<mark>$1</mark>")}
+
+// ═══════ ЗАМОВЛЕННЯ ═══════
+// Build order lines: one entry per drug with deficit > 0 that has a matching tender.
+// Returns {lines:[{drugName, f6Unit, f6Stock, need, deficit, monitor, suppliers:[{name, tenders, pk, packUnit, packDeficit, tenderRemaining, pricePerPack, totalCost}]}], noMatch:[], noTender:[]}
+function buildOrders(horizon){
+if(!f6Months.length)return{lines:[],noMatch:[],noTender:[],needPurchases:allData.length===0};
+const analysis=analyzeF6(f6Months,horizon,f6MonthsEnabled);
+const noMatch=[],noTender=[],lines=[];
+for(const it of analysis.items){
+if(it.deficit<=0)continue;
+if(ordersExcluded[it.name])continue;
+const monitor=findInMonitor(it.name);
+if(!monitor){noMatch.push(it);continue}
+if(!monitor.t||!monitor.t.length){noTender.push({it,monitor});continue}
+// Group monitor tenders by supplier
+const bySup={};
+for(const t of monitor.t){
+if(!bySup[t.s])bySup[t.s]={name:t.s,tenders:[],pk:t.pk||1,packUnit:t.tu||monitor.du,tenderRemaining:0,pricePerPack:null};
+bySup[t.s].tenders.push(t);
+// Use consistent pk across supplier (take max if differ)
+if((t.pk||1)>bySup[t.s].pk)bySup[t.s].pk=t.pk||1;
+if(t.p!=null&&bySup[t.s].pricePerPack==null)bySup[t.s].pricePerPack=t.p;
+}
+// For each supplier, compute remaining tender capacity in f6 units (cq = already in purchase-units)
+for(const s of Object.values(bySup)){
+const totalCq=s.tenders.reduce((acc,t)=>acc+(t.cq||t.tq),0);
+const totalConsumed=monitor.pq||0;
+// Approx remaining per supplier is proportional to its share — simple: use monitor.rem if 1 supplier
+s.tenderRemaining=Math.max(0,totalCq-(monitor.multi?0:totalConsumed));
+// If single supplier, use monitor.rem directly
+if(!monitor.multi)s.tenderRemaining=monitor.rem;
+}
+const suppliers=Object.values(bySup);
+lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,deficit:it.deficit,dailyRate:it.dailyRate,monitor,suppliers});
+}
+// Apply supplier choice: for each line pick chosen supplier (or first)
+const bySupplierGroup={};
+for(const l of lines){
+const chosen=ordersSupplierChoice[l.drugName]||(l.suppliers[0]&&l.suppliers[0].name);
+const sup=l.suppliers.find(s=>s.name===chosen)||l.suppliers[0];
+if(!sup)continue;
+// Compute packs to order: ceil(deficit / pk)
+const pk=sup.pk||1;
+const packsNeeded=Math.ceil(l.deficit/pk);
+const qtyInPurchaseUnits=packsNeeded*pk; // actual amount being ordered (in f6 units)
+const packsAvailable=Math.floor(sup.tenderRemaining/pk);
+const packsToOrder=Math.min(packsNeeded,packsAvailable);
+const shortfall=packsNeeded>packsAvailable?packsNeeded-packsAvailable:0;
+const costEstimate=sup.pricePerPack!=null?packsToOrder*sup.pricePerPack:null;
+if(!bySupplierGroup[sup.name])bySupplierGroup[sup.name]={name:sup.name,items:[],total:0};
+bySupplierGroup[sup.name].items.push({
+drugName:l.drugName,
+commercial:sup.tenders[0].cn||l.drugName,
+contract:sup.tenders[0].c||"",
+f6Unit:l.f6Unit,stock:l.f6Stock,need:l.need,deficit:l.deficit,
+packUnit:sup.packUnit,pk,packsNeeded,packsAvailable,packsToOrder,shortfall,
+qtyInPurchaseUnits:packsToOrder*pk,
+pricePerPack:sup.pricePerPack,costEstimate,
+altSuppliers:l.suppliers.filter(s=>s.name!==sup.name).map(s=>s.name),
+allSuppliers:l.suppliers.map(s=>s.name),
+});
+if(costEstimate!=null)bySupplierGroup[sup.name].total+=costEstimate;
+}
+const supplierOrders=Object.values(bySupplierGroup).sort((a,b)=>a.name.localeCompare(b.name,"uk"));
+return{lines,noMatch,noTender,supplierOrders,needPurchases:allData.length===0};
+}
+
+function renderOrders(el){
+// Gate: need F6 at minimum
+if(!f6Months.length){
+el.innerHTML='<div class="empty-state" style="padding:40px 20px"><div style="font-size:44px;margin-bottom:14px">📝</div><div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Замовлення</div><div style="font-size:13px;line-height:1.5;max-width:420px;margin:0 auto">Потрібні дані Форми 6. Відкрий «Моніторинг розходу» і завантаж файл.</div></div>';
+return;
+}
+const data=buildOrders(ordersHorizon);
+const q=ordersSearch.trim().toLowerCase();
+let h='';
+// Header: horizon selector + explanation
+h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
+h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Горизонт замовлення — на скільки днів забезпечити</div>';
+h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
+for(const d of [15,30,60,90,180])h+=`<button class="mode-btn${ordersHorizon===d?" active":""}" onclick="ordersHorizon=${d};render()">${d} днів</button>`;
+h+='</div>';
+h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4;font-style:italic">Дефіцит з Моніторингу розходу (потреба на N днів − залишок) → округлено до цілих упаковок.</div>';
+h+='</div>';
+
+if(data.needPurchases){
+h+='<div style="padding:10px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);border-radius:10px;color:#93c5fd;font-size:12px;margin-bottom:10px">⏳ Завантажуємо дані закупівель та тендерів у фоні... Сторінка автоматично оновиться.</div>';
+}
+
+const totalItems=data.supplierOrders.reduce((s,g)=>s+g.items.length,0);
+const totalCost=data.supplierOrders.reduce((s,g)=>s+g.total,0);
+// Summary bar
+h+='<div class="stats-bar" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">';
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--accent)">${data.supplierOrders.length}</div><div class="stat-lbl">Постачальн.</div></div>`;
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--warn)">${totalItems}</div><div class="stat-lbl">Позицій</div></div>`;
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--green);font-size:13px">${fmt(Math.round(totalCost))}</div><div class="stat-lbl">Сума, грн</div></div>`;
+h+='</div>';
+
+// Warnings for items without matches
+const warnBits=[];
+if(data.noMatch.length)warnBits.push(`<strong>${data.noMatch.length}</strong> з дефіцитом, але немає в тендерах`);
+if(data.noTender.length)warnBits.push(`<strong>${data.noTender.length}</strong> в закупівлях, але без угоди`);
+if(warnBits.length){
+h+='<details style="margin-bottom:10px;padding:8px 12px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:10px;font-size:12px;color:#fcd34d">';
+h+='<summary style="cursor:pointer">⚠️ Увага: '+warnBits.join(" · ")+'</summary>';
+h+='<div style="margin-top:8px;font-size:11px;line-height:1.5">';
+if(data.noMatch.length){
+h+='<div style="font-weight:600;margin-top:4px">Немає в тендерах (новий тендер?):</div>';
+data.noMatch.slice(0,20).forEach(it=>{h+='<div style="padding:2px 0">• '+esc(it.name.slice(0,80))+' (дефіцит '+Math.round(it.deficit)+' '+esc(it.unit)+')</div>'});
+if(data.noMatch.length>20)h+='<div style="color:var(--muted)">… і ще '+(data.noMatch.length-20)+'</div>';
+}
+if(data.noTender.length){
+h+='<div style="font-weight:600;margin-top:4px">Є в закупівлях, без угоди:</div>';
+data.noTender.slice(0,20).forEach(o=>{h+='<div style="padding:2px 0">• '+esc(o.it.name.slice(0,80))+'</div>'});
+}
+h+='</div></details>';
+}
+
+if(!data.supplierOrders.length){
+h+='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Немає потреби замовляти</div><div style="font-size:13px">Усі препарати забезпечені на '+ordersHorizon+' днів</div></div>';
+el.innerHTML=h;return;
+}
+
+// Filter supplier groups by search
+let groups=data.supplierOrders;
+if(q){const w=q.split(/\s+/).filter(Boolean);
+groups=groups.map(g=>({...g,items:g.items.filter(it=>{const hay=(g.name+" "+it.drugName+" "+it.commercial).toLowerCase();return w.every(x=>hay.includes(x))})})).filter(g=>g.items.length);
+}
+
+// Render each supplier as expandable card
+for(const g of groups){
+const isExp=ordersExpandedSupplier===g.name;
+h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${JSON.stringify(g.name)})">`;
+h+=`<div class="agr-sup">📝 ${hlPlain(g.name,q)}</div>`;
+h+=`<div class="agr-meta"><span>Позицій: <strong>${g.items.length}</strong></span><span>Сума: <strong>${fmt(Math.round(g.total))} грн</strong></span></div>`;
+h+='<div class="agr-detail" onclick="event.stopPropagation()">';
+// Action buttons
+h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+h+=`<button class="exp-btn" style="background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent)" onclick="copyOrderText(${JSON.stringify(g.name)})">📋 Копіювати</button>`;
+h+=`<button class="exp-btn" onclick="exportOrderCSV(${JSON.stringify(g.name)})">📊 CSV</button>`;
+h+='</div>';
+// Items table
+for(const it of g.items){
+const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
+h+='<div class="agr-item" style="padding-bottom:10px">';
+h+=`<div class="name">${hlPlain(it.drugName,q)}</div>`;
+if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
+h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
+h+=`<div class="row"><span>Потреба (на ${ordersHorizon}д):</span><strong>${fmt(Math.round(it.need))} ${esc(it.f6Unit)}</strong></div>`;
+h+=`<div class="row"><span>Дефіцит:</span><strong style="color:var(--danger)">${fmt(Math.round(it.deficit))} ${esc(it.f6Unit)}</strong></div>`;
+if(it.pk>1){
+h+=`<div class="row"><span>Замовити:</span><strong style="color:var(--accent)">${fmt(it.packsToOrder)} ${esc(it.packUnit)} × ${it.pk} = ${fmt(it.qtyInPurchaseUnits)} ${esc(it.f6Unit)}</strong></div>`;
+}else{
+h+=`<div class="row"><span>Замовити:</span><strong style="color:var(--accent)">${fmt(it.packsToOrder)} ${esc(it.packUnit)}</strong></div>`;
+}
+if(it.pricePerPack!=null){
+h+=`<div class="row"><span>Ціна/${esc(it.packUnit)}:</span><strong>${fmt(it.pricePerPack)} грн</strong></div>`;
+h+=`<div class="row"><span>Сума:</span><strong style="color:var(--green)">${fmt(Math.round(it.costEstimate||0))} грн</strong></div>`;
+}
+if(it.shortfall>0){
+h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:4px;font-size:11px;color:#fca5a5">⚠️ Не вистачає по угоді: ще ${it.shortfall} ${esc(it.packUnit)} (потрібен новий тендер)</div>`;
+}
+if(hasAlts){
+h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Інші постачальники цього препарату:</div>';
+h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
+it.allSuppliers.forEach(sn=>{
+const selected=(sn===g.name);
+h+=`<button class="sort-btn${selected?" active":""}" onclick="chooseOrderSupplier(${JSON.stringify(it.drugName)},${JSON.stringify(sn)})" style="font-size:10px">${esc(sn)}</button>`;
+});
+h+='</div>';
+}
+h+=`<div style="margin-top:6px"><button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItem(${JSON.stringify(it.drugName)})">✕ Прибрати з замовлення</button></div>`;
+h+='</div>';
+}
+h+='</div></div>';
+}
+
+// Excluded items
+const excludedList=Object.keys(ordersExcluded).filter(k=>ordersExcluded[k]);
+if(excludedList.length){
+h+='<details style="margin-top:12px;padding:8px 12px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:10px;font-size:12px;color:#c4b5fd">';
+h+=`<summary style="cursor:pointer">🙈 Виключено з замовлень: ${excludedList.length}</summary>`;
+h+='<div style="margin-top:6px">';
+excludedList.forEach(n=>{h+=`<div style="padding:3px 0;font-size:11px">• ${esc(n)} <button class="sort-btn" style="font-size:10px;margin-left:8px" onclick="includeOrderItem(${JSON.stringify(n)})">Повернути</button></div>`});
+h+='</div></details>';
+}
+
+el.innerHTML=h;
+}
+
+function toggleOrderSupplier(name){
+ordersExpandedSupplier=(ordersExpandedSupplier===name)?null:name;
+render();
+}
+function chooseOrderSupplier(drugName,supplierName){
+ordersSupplierChoice[drugName]=supplierName;
+render();
+}
+function excludeOrderItem(drugName){
+ordersExcluded[drugName]=true;
+render();
+}
+function includeOrderItem(drugName){
+delete ordersExcluded[drugName];
+render();
+}
+
+function buildOrderText(supplierName){
+const data=buildOrders(ordersHorizon);
+const g=data.supplierOrders.find(s=>s.name===supplierName);
+if(!g)return"";
+let txt=`Замовлення для «${g.name}»\n`;
+txt+=`Горизонт: ${ordersHorizon} днів\n\n`;
+g.items.forEach((it,i)=>{
+txt+=`${i+1}. ${it.drugName}\n`;
+txt+=`   Замовити: ${it.packsToOrder} ${it.packUnit}`;
+if(it.pk>1)txt+=` (= ${it.qtyInPurchaseUnits} ${it.f6Unit})`;
+txt+="\n";
+if(it.pricePerPack!=null)txt+=`   Ціна: ${it.pricePerPack} грн/${it.packUnit} · Сума: ${Math.round(it.costEstimate||0)} грн\n`;
+if(it.contract)txt+=`   Угода: ${it.contract}\n`;
+if(it.shortfall>0)txt+=`   ⚠ Бракує ${it.shortfall} ${it.packUnit} — потрібен новий тендер\n`;
+txt+="\n";
+});
+txt+=`РАЗОМ: ${g.items.length} позицій, ~${Math.round(g.total)} грн\n`;
+return txt;
+}
+function copyOrderText(supplierName){
+const txt=buildOrderText(supplierName);
+if(!txt)return;
+navigator.clipboard.writeText(txt).then(()=>{
+const el=event.target;const old=el.textContent;el.textContent="✓ Скопійовано";
+setTimeout(()=>{el.textContent=old},1500);
+}).catch(()=>{
+// Fallback
+const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
+const el=event.target;const old=el.textContent;el.textContent="✓ Скопійовано";setTimeout(()=>{el.textContent=old},1500);
+});
+}
+function exportOrderCSV(supplierName){
+const data=buildOrders(ordersHorizon);
+const g=data.supplierOrders.find(s=>s.name===supplierName);
+if(!g)return;
+const rows=[["№","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
+g.items.forEach((it,i)=>rows.push([i+1,it.drugName,it.contract,it.packsToOrder,it.pk,it.qtyInPurchaseUnits,it.f6Unit,it.pricePerPack||"",Math.round(it.costEstimate||0)]));
+rows.push(["","РАЗОМ","","","","","","",Math.round(g.total)]);
+const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
+const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");
+a.href="data:text/csv;base64,"+b64;a.download="zamovlennya_"+supplierName.replace(/[^а-яА-Яa-zA-Z0-9]/g,"_")+".csv";
+document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
 
 function renderConflicts(el){
 const conflicts=allData.filter(d=>d.multi&&!d.alloc);
