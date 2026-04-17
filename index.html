@@ -262,7 +262,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v26";
+const CACHE_KEY = "tendertrack_v27";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -1023,21 +1023,22 @@ el.innerHTML=h;restoreF6SearchFocus();return;
 }
 if(!filtered.length){h+='<div class="empty-state">Нічого не знайдено</div>';el.innerHTML=h;restoreF6SearchFocus();return}
 
-for(const it of filtered){
+for(let idx=0;idx<filtered.length;idx++){
+const it=filtered[idx];
 const st=f6Status(it,f6Horizon);
 const stColor={deficit:"var(--danger)",critical:"var(--orange)",warning:"var(--warn)",ok:"var(--green)"}[st];
 const stEmoji={deficit:"🔴",critical:"🟠",warning:"🟡",ok:"🟢"}[st];
 const pct=Math.min(it.daysLeft/f6Horizon*100,100);
 const isExp=f6ExpandedCard===it.name;
 const linkedMonitor=findInMonitor(it.name);
-h+=`<div class="card${isExp?" expanded":""}" onclick="f6ExpandedCard=f6ExpandedCard===${JSON.stringify(it.name)}?null:${JSON.stringify(it.name)};render()">`;
+h+=`<div class="card${isExp?" expanded":""}" data-f6idx="${idx}">`;
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<div style="font-size:22px;line-height:1;margin-top:2px">${stEmoji}</div>`;
 h+=`<div class="card-info"><div class="drug-name">${hlPlain(it.name,q)}</div>`;
 h+=`<div class="mnn-line">Темп: ${it.dailyRate.toFixed(2)} ${esc(it.unit)}/день · з ${esc(it.firstMonth)}</div>`;
 h+=`</div><div class="card-qty"><div class="num" style="color:${stColor}">${it.daysLeft>=9999?"∞":it.daysLeft.toFixed(0)+"д"}</div><div class="unit">залишилось</div></div></div></div>`;
 h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${stColor}"></div></div><span class="bar-pct">${it.daysLeft>=9999?"—":Math.round(pct)+"%"}</span></div>`;
-h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
+h+=`<div class="card-detail">`;
 h+=`<div class="detail-grid">`;
 h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val">${fmt(it.stock)} ${esc(it.unit)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">Використано за період</div><div class="val">${fmt(it.totalUsed)} ${esc(it.unit)}</div></div>`;
@@ -1056,11 +1057,33 @@ else h+=`<span style="color:var(--muted);font-style:italic">—</span>`;
 h+=`</div>`;
 }
 h+='</div>';
-if(linkedMonitor)h+=`<button class="exp-btn" style="margin-top:10px;background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent);font-size:12px;padding:8px 14px;width:100%" onclick="gotoMonitor(${JSON.stringify(linkedMonitor.n)})">📦 Показати в «Моніторинг закупівель»</button>`;
+if(linkedMonitor)h+=`<button class="exp-btn f6-goto-btn" data-monitor-name="${esc(linkedMonitor.n)}" style="margin-top:10px;background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent);font-size:12px;padding:8px 14px;width:100%">📦 Показати в «Моніторинг закупівель»</button>`;
 else h+=`<div style="margin-top:10px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px;font-size:11px;color:var(--muted);text-align:center">Не знайдено в закупівлях/тендерах</div>`;
 h+=`</div></div>`;
 }
-el.innerHTML=h;restoreF6SearchFocus();
+// Cache items for delegated handlers
+window._f6FilteredItems=filtered;
+el.innerHTML=h;
+// Wire up delegated clicks
+el.querySelectorAll(".card[data-f6idx]").forEach(card=>{
+card.addEventListener("click",(ev)=>{
+// Ignore clicks inside card-detail (expanded area)
+if(ev.target.closest(".card-detail"))return;
+const i=parseInt(card.getAttribute("data-f6idx"));
+const name=(window._f6FilteredItems||[])[i]?.name;
+if(!name)return;
+f6ExpandedCard=(f6ExpandedCard===name)?null:name;
+render();
+});
+});
+el.querySelectorAll(".f6-goto-btn").forEach(btn=>{
+btn.addEventListener("click",(ev)=>{
+ev.stopPropagation();
+const n=btn.getAttribute("data-monitor-name");
+if(n)gotoMonitor(n);
+});
+});
+restoreF6SearchFocus();
 }
 
 // Restore focus and value into #f6-search after re-render
