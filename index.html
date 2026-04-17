@@ -262,7 +262,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v29";
+const CACHE_KEY = "tendertrack_v30";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -778,7 +778,14 @@ let _searchTimer=null;
 function onSearchInput(v){
 document.getElementById("pin-btn").style.display=v.trim()?"block":"none";
 clearTimeout(_searchTimer);
+if(currentView==="consumption"){
+// For Розхід — route to f6Search, no pinning needed
+document.getElementById("pin-btn").style.display="none";
+f6Search=v;
+_searchTimer=setTimeout(()=>{render()},120);
+}else{
 _searchTimer=setTimeout(()=>{currentSearch=v.trim();render()},200);
+}
 }
 function pinSearch(){const v=document.getElementById("search-input").value.trim();if(!v)return;pinnedSearch=v;currentSearch="";document.getElementById("search-input").value="";document.getElementById("pin-btn").style.display="none";render()}
 function unpinSearch(){pinnedSearch="";render()}
@@ -827,17 +834,34 @@ document.getElementById("btn-upload").classList.toggle("hidden",isConsumption);
 document.getElementById("btn-f6-refresh").classList.toggle("hidden",!isConsumption);
 document.getElementById("btn-f6-upload").classList.toggle("hidden",!isConsumption);
 updateNavBtns();
-// Search bar toggling (only for purchases views)
+// Unified sticky search — shown for both views, with different state
 const pw=document.getElementById("pinned-wrap");
 const sw=document.getElementById("search-wrap");
 const searchArea=document.getElementById("search-area");
-searchArea.classList.toggle("hidden",isConsumption);
-if(!isConsumption){
+const modeRow=document.getElementById("mode-row");
+const searchInput=document.getElementById("search-input");
+const pinBtn=document.getElementById("pin-btn");
+searchArea.classList.remove("hidden");
+if(isConsumption){
+// Розхід: hide mode buttons & pin, show search input with f6Search value
+modeRow.classList.add("hidden");
+pw.classList.add("hidden");
+sw.classList.remove("hidden");
+searchInput.placeholder="Пошук препарату...";
+if(document.activeElement!==searchInput)searchInput.value=f6Search;
+pinBtn.style.display="none";
+}else{
+modeRow.classList.remove("hidden");
 if(pinnedSearch){
 const mLabel={name:"Назва:",mnn:"МНН:",supplier:"Постач.:",contract:"Угода:"}[searchMode]||"";
 pw.innerHTML='<div class="pinned-tag"><span style="color:var(--muted);font-size:11px">'+mLabel+'</span> <strong>'+esc(pinnedSearch)+'</strong><span class="x" onclick="unpinSearch()">×</span></div>';
 pw.classList.remove("hidden");sw.classList.add("hidden");
-}else{pw.classList.add("hidden");sw.classList.remove("hidden")}
+}else{
+pw.classList.add("hidden");sw.classList.remove("hidden");
+const ph={name:"Назва препарату...",mnn:"МНН...",supplier:"Постачальник...",contract:"Угода..."};
+searchInput.placeholder=ph[searchMode]||ph.name;
+if(document.activeElement!==searchInput)searchInput.value=currentSearch;
+}
 }
 const el=document.getElementById("main-screen");
 if(currentView==="monitor")renderMonitor(el);
@@ -967,10 +991,6 @@ else if(f6Sort==="stock")filtered.sort((a,b)=>a.stock-b.stock);
 
 let h='';
 
-// Search — first thing (like in purchases)
-h+='<div class="search-wrap" style="margin-bottom:10px"><span class="search-ico">🔍</span>';
-h+=`<input id="f6-search" placeholder="Пошук препарату..." oninput="onF6SearchInput(this.value)"></div>`;
-
 // Period + months checkboxes + horizon
 const enabledCount=f6MonthsEnabled.filter(Boolean).length;
 h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
@@ -1023,9 +1043,9 @@ h+='</div>';
 const showCards=(f6Filter!=="all")||f6ShowAllCards||!!q;
 if(!showCards){
 h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
-el.innerHTML=h;restoreF6SearchFocus();return;
+el.innerHTML=h;return;
 }
-if(!filtered.length){h+='<div class="empty-state">Нічого не знайдено</div>';el.innerHTML=h;restoreF6SearchFocus();return}
+if(!filtered.length){h+='<div class="empty-state">Нічого не знайдено</div>';el.innerHTML=h;return}
 
 for(let idx=0;idx<filtered.length;idx++){
 const it=filtered[idx];
@@ -1067,7 +1087,6 @@ h+=`</div></div>`;
 }
 window._f6FilteredItems=filtered;
 el.innerHTML=h;
-restoreF6SearchFocus();
 }
 
 // Click handlers using numeric index
@@ -1082,27 +1101,6 @@ const it=(window._f6FilteredItems||[])[idx];
 if(!it)return;
 const linked=findInMonitor(it.name);
 if(linked)gotoMonitor(linked.n);
-}
-
-// Restore focus and value into #f6-search after re-render
-function restoreF6SearchFocus(){
-const i=document.getElementById("f6-search");
-if(!i)return;
-i.value=f6Search;
-if(window._f6SearchFocused){i.focus();const L=i.value.length;i.setSelectionRange(L,L)}
-}
-// Track focus lifecycle so that clicks outside the search box don't yank focus back
-document.addEventListener("click",(e)=>{
-const t=e.target;
-if(!t||(t.id!=="f6-search"))window._f6SearchFocused=false;
-},true);
-
-let _f6SearchTimer=null;
-function onF6SearchInput(v){
-window._f6SearchFocused=true;
-f6Search=v;
-clearTimeout(_f6SearchTimer);
-_f6SearchTimer=setTimeout(()=>{render()},120);
 }
 
 function toggleF6Month(i){
