@@ -42,6 +42,15 @@ body{background:#5a5e64;background-image:url("data:image/svg+xml,%3Csvg width='6
 .pinned-tag .x:hover{color:var(--danger)}
 /* Body */
 #body{padding:12px 16px 0}
+/* Home screen */
+#home-screen{padding:8px 4px 40px}
+.home-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:6px}
+@media(min-width:560px){.home-grid{grid-template-columns:1fr 1fr}}
+.home-tile{background:rgba(42,46,52,.92);border:1.5px solid rgba(255,255,255,.1);border-radius:16px;padding:20px 18px;cursor:pointer;transition:all .2s;text-align:left}
+.home-tile:hover{border-color:var(--accent);background:rgba(42,46,52,1);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.home-tile-ico{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:12px}
+.home-tile-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:6px}
+.home-tile-desc{font-size:12px;color:var(--muted);line-height:1.45}
 /* Start screen */
 #start-screen{text-align:center;padding:50px 20px}
 .start-title{font-size:22px;font-weight:800;margin-bottom:4px}
@@ -184,11 +193,32 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 </div>
 </div>
 <div id="body">
-<div id="start-screen">
-<div style="width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#166534,#22c55e);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#fff;margin:0 auto 16px;box-shadow:0 8px 32px rgba(34,197,94,.3)">TT</div>
+<div id="home-screen">
+<div style="text-align:center;padding:24px 16px 16px">
+<div style="width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#166534,#22c55e);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#fff;margin:0 auto 14px;box-shadow:0 8px 32px rgba(34,197,94,.3)">TT</div>
 <div class="start-title"><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div>
-<div class="dev-credit" style="font-size:18px;margin-bottom:6px">Developed by Ostap Khmil</div>
-<div class="start-sub">Моніторинг тендерних угод та закупівель</div>
+<div class="dev-credit" style="font-size:16px;margin-bottom:6px">Developed by Ostap Khmil</div>
+<div class="start-sub" style="margin-bottom:20px">Оберіть розділ</div>
+</div>
+<div class="home-grid">
+<div class="home-tile" onclick="enterSection('monitor')">
+<div class="home-tile-ico" style="background:linear-gradient(135deg,rgba(34,197,94,.25),rgba(34,197,94,.08));color:#22c55e">📦</div>
+<div class="home-tile-title">Моніторинг закупівель</div>
+<div class="home-tile-desc">Зіставлення закупівель з тендерними угодами, залишки, прогноз, конфлікти постачальників</div>
+</div>
+<div class="home-tile" onclick="enterSection('consumption')">
+<div class="home-tile-ico" style="background:linear-gradient(135deg,rgba(59,130,246,.25),rgba(59,130,246,.08));color:#60a5fa">📊</div>
+<div class="home-tile-title">Моніторинг розходу</div>
+<div class="home-tile-desc">Аналіз розходу за Формою 6, середньоденне використання, прогноз потреби на 30/60/90/180 днів</div>
+</div>
+</div>
+</div>
+<div id="start-screen" class="hidden">
+<div style="text-align:center;padding:20px 16px 10px">
+<div style="font-size:40px;margin-bottom:10px">📦</div>
+<div class="start-title" style="font-size:20px;margin-bottom:4px">Моніторинг закупівель</div>
+<div class="start-sub" style="margin-bottom:16px">Завантажте дані, щоб почати</div>
+</div>
 <button class="big-btn" id="drive-btn" onclick="loadFromDrive(false)">☁️ Завантажити актуальні дані</button>
 <div class="or-div">або завантажити файли вручну</div>
 <div class="upload-zone" id="uz-manual" onclick="showManualFields()">📂 Завантажити .xlsx файли з пристрою</div>
@@ -212,7 +242,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v23";
+const CACHE_KEY = "tendertrack_v24";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -496,7 +526,10 @@ purchasesRaw=pB;tendersRaw=tB;
 const p=parsePurchases(pB);const t=parseTenders(tB);
 overrides=parseAllocations(tB);
 parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
-saveCache();showMain();
+saveCache();
+// Only jump to main screen if user isn't currently on home
+const onHome=!document.getElementById("home-screen").classList.contains("hidden");
+if(!onHome)showMain();
 }catch(e){if(showErr){document.getElementById("start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("start")}}
 }
 function handleFile(file,type){
@@ -524,18 +557,32 @@ function showManualFields(){document.getElementById("manual-fields").classList.r
 
 // ═══════ SCREENS ═══════
 function showScreen(name){
+document.getElementById("home-screen").classList.toggle("hidden",name!=="home");
 document.getElementById("start-screen").classList.toggle("hidden",name!=="start");
 document.getElementById("loader").classList.toggle("hidden",name!=="loader");
 document.getElementById("main-screen").classList.toggle("hidden",name!=="main");
-document.getElementById("nav-btns").classList.toggle("hidden",name!=="main");
+// Nav buttons and search shown only when inside a section (main or start/loader of that section)
+const inSection=(name==="main"||name==="start"||name==="loader");
+document.getElementById("nav-btns").classList.toggle("hidden",!inSection);
 document.getElementById("search-area").classList.toggle("hidden",name!=="main");
 }
 function showLoader(msg){showScreen("loader");document.getElementById("loader-text").textContent=msg}
 function showMain(){showScreen("main");render()}
-function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pinnedSearch="";expandedCard=null;document.getElementById("search-input").value="";render()}
+function showHome(){showScreen("home")}
+function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pinnedSearch="";expandedCard=null;const si=document.getElementById("search-input");if(si)si.value="";showHome()}
+function enterSection(v){
+currentView=v;expandedCard=null;expandedAgr=null;
+if(v==="consumption"){showMain();return}
+// monitor — need data loaded
+if(allData.length>0){showMain()}else{showScreen("start")}
+}
 
 // ═══════ VIEW SWITCHING ═══════
-function switchView(v){currentView=v;expandedCard=null;expandedAgr=null;render();updateNavBtns()}
+function switchView(v){
+currentView=v;expandedCard=null;expandedAgr=null;
+if((v==="monitor"||v==="agreements"||v==="conflicts")&&allData.length===0){showScreen("start");updateNavBtns();return}
+render();updateNavBtns();
+}
 function updateNavBtns(){
 document.getElementById("btn-monitor").classList.toggle("active",currentView==="monitor");
 document.getElementById("btn-consumption").classList.toggle("active",currentView==="consumption");
@@ -727,8 +774,9 @@ el.innerHTML=h;
 const c=loadCache();
 if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;
 if(c.purchases)parsedPurchases=c.purchases;
-showMain();fetchDriveBackground();
+fetchDriveBackground();
 }
+showHome();
 })();
 </script>
 </body>
