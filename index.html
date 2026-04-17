@@ -242,7 +242,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="start-title" style="font-size:20px;margin-bottom:4px">Моніторинг розходу</div>
 <div class="start-sub" style="margin-bottom:16px">Завантажте Форму 6, щоб побачити аналіз</div>
 </div>
-<button class="big-btn" onclick="loadF6FromDrive(false)">☁️ Завантажити з Google Drive</button>
+<button class="big-btn" onclick="loadF6FromDrive(false)">☁️ Завантажити актуальні дані</button>
 <div class="or-div">або з пристрою</div>
 <div class="upload-zone" id="f6-uz-manual" onclick="showF6ManualFields()">📂 Форма 6 (.xlsx)</div>
 <div id="f6-manual-fields" class="hidden">
@@ -262,7 +262,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v30";
+const CACHE_KEY = "tendertrack_v32";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -569,7 +569,7 @@ if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStri
 if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
 if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
-let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>100)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
+let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
 const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
 let tInfo=allTI;
 const ovEntry=isMulti?ov[p.name]:null;
@@ -651,7 +651,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
 if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
-showLoader(isRefresh?"Оновлюємо з Google Drive...":"Завантажуємо з Google Drive...");
+showLoader(isRefresh?"Оновлюємо актуальні дані...":"Завантажуємо актуальні дані...");
 await fetchDriveBackground(true);
 }
 async function fetchDriveBackground(showErr){
@@ -693,7 +693,7 @@ function showManualFields(){document.getElementById("manual-fields").classList.r
 // ─── Форма 6 loaders ───
 async function loadF6FromDrive(isRefresh){
 if(!isRefresh&&f6Months.length){showMain();fetchF6Background();return}
-showLoader(isRefresh?"Оновлюємо Форму 6...":"Завантажуємо Форму 6...");
+showLoader(isRefresh?"Оновлюємо актуальні дані...":"Завантажуємо актуальні дані...");
 await fetchF6Background(true);
 }
 async function fetchF6Background(showErr){
@@ -1016,7 +1016,7 @@ h+='</div>';
 // Horizon
 h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Горизонт планування — на скільки днів вперед рахувати потребу</div>';
 h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
-for(const d of [30,60,90,180])h+=`<button class="mode-btn${f6Horizon===d?" active":""}" onclick="f6Horizon=${d};render()">${d} днів</button>`;
+for(const d of [15,30,60,90,180])h+=`<button class="mode-btn${f6Horizon===d?" active":""}" onclick="f6Horizon=${d};render()">${d} днів</button>`;
 h+='</div>';
 h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4;font-style:italic">Темп (од/день) × горизонт = потреба. Потреба − залишок = дефіцит (скільки докупити).</div>';
 h+='</div>';
