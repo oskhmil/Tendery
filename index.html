@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v33";
+const CACHE_KEY = "tendertrack_v34";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -1370,19 +1370,22 @@ groups=groups.map(g=>({...g,items:g.items.filter(it=>{const hay=(g.name+" "+it.d
 }
 
 // Render each supplier as expandable card
-for(const g of groups){
+window._ordersGroups=groups;
+for(let gi=0;gi<groups.length;gi++){
+const g=groups[gi];
 const isExp=ordersExpandedSupplier===g.name;
-h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${JSON.stringify(g.name)})">`;
+h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${gi})">`;
 h+=`<div class="agr-sup">📝 ${hlPlain(g.name,q)}</div>`;
 h+=`<div class="agr-meta"><span>Позицій: <strong>${g.items.length}</strong></span><span>Сума: <strong>${fmt(Math.round(g.total))} грн</strong></span></div>`;
 h+='<div class="agr-detail" onclick="event.stopPropagation()">';
 // Action buttons
 h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
-h+=`<button class="exp-btn" style="background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent)" onclick="copyOrderText(${JSON.stringify(g.name)})">📋 Копіювати</button>`;
-h+=`<button class="exp-btn" onclick="exportOrderCSV(${JSON.stringify(g.name)})">📊 CSV</button>`;
+h+=`<button class="exp-btn" style="background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent)" onclick="copyOrderText(${gi})">📋 Копіювати</button>`;
+h+=`<button class="exp-btn" onclick="exportOrderCSV(${gi})">📊 CSV</button>`;
 h+='</div>';
 // Items table
-for(const it of g.items){
+for(let ii=0;ii<g.items.length;ii++){
+const it=g.items[ii];
 const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
 h+='<div class="agr-item" style="padding-bottom:10px">';
 h+=`<div class="name">${hlPlain(it.drugName,q)}</div>`;
@@ -1405,13 +1408,14 @@ h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);bor
 if(hasAlts){
 h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Інші постачальники цього препарату:</div>';
 h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-it.allSuppliers.forEach(sn=>{
+for(let si=0;si<it.allSuppliers.length;si++){
+const sn=it.allSuppliers[si];
 const selected=(sn===g.name);
-h+=`<button class="sort-btn${selected?" active":""}" onclick="chooseOrderSupplier(${JSON.stringify(it.drugName)},${JSON.stringify(sn)})" style="font-size:10px">${esc(sn)}</button>`;
-});
+h+=`<button class="sort-btn${selected?" active":""}" onclick="chooseOrderSupplierByIdx(${gi},${ii},${si})" style="font-size:10px">${esc(sn)}</button>`;
+}
 h+='</div>';
 }
-h+=`<div style="margin-top:6px"><button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItem(${JSON.stringify(it.drugName)})">✕ Прибрати з замовлення</button></div>`;
+h+=`<div style="margin-top:6px"><button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItemByIdx(${gi},${ii})">✕ Прибрати з замовлення</button></div>`;
 h+='</div>';
 }
 h+='</div></div>';
@@ -1423,33 +1427,49 @@ if(excludedList.length){
 h+='<details style="margin-top:12px;padding:8px 12px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:10px;font-size:12px;color:#c4b5fd">';
 h+=`<summary style="cursor:pointer">🙈 Виключено з замовлень: ${excludedList.length}</summary>`;
 h+='<div style="margin-top:6px">';
-excludedList.forEach(n=>{h+=`<div style="padding:3px 0;font-size:11px">• ${esc(n)} <button class="sort-btn" style="font-size:10px;margin-left:8px" onclick="includeOrderItem(${JSON.stringify(n)})">Повернути</button></div>`});
+window._excludedList=excludedList;
+for(let ei=0;ei<excludedList.length;ei++){
+h+=`<div style="padding:3px 0;font-size:11px">• ${esc(excludedList[ei])} <button class="sort-btn" style="font-size:10px;margin-left:8px" onclick="includeOrderItemByIdx(${ei})">Повернути</button></div>`;
+}
 h+='</div></details>';
 }
 
 el.innerHTML=h;
 }
 
-function toggleOrderSupplier(name){
-ordersExpandedSupplier=(ordersExpandedSupplier===name)?null:name;
+function toggleOrderSupplier(gi){
+const g=(window._ordersGroups||[])[gi];
+if(!g)return;
+ordersExpandedSupplier=(ordersExpandedSupplier===g.name)?null:g.name;
 render();
 }
-function chooseOrderSupplier(drugName,supplierName){
-ordersSupplierChoice[drugName]=supplierName;
+function chooseOrderSupplierByIdx(gi,ii,si){
+const g=(window._ordersGroups||[])[gi];
+if(!g)return;
+const it=g.items[ii];
+if(!it)return;
+const sn=it.allSuppliers[si];
+if(!sn)return;
+ordersSupplierChoice[it.drugName]=sn;
 render();
 }
-function excludeOrderItem(drugName){
-ordersExcluded[drugName]=true;
+function excludeOrderItemByIdx(gi,ii){
+const g=(window._ordersGroups||[])[gi];
+if(!g)return;
+const it=g.items[ii];
+if(!it)return;
+ordersExcluded[it.drugName]=true;
 render();
 }
-function includeOrderItem(drugName){
-delete ordersExcluded[drugName];
+function includeOrderItemByIdx(ei){
+const name=(window._excludedList||[])[ei];
+if(!name)return;
+delete ordersExcluded[name];
 render();
 }
 
-function buildOrderText(supplierName){
-const data=buildOrders(ordersHorizon);
-const g=data.supplierOrders.find(s=>s.name===supplierName);
+function buildOrderText(gi){
+const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
 let txt=`Замовлення для «${g.name}»\n`;
 txt+=`Горизонт: ${ordersHorizon} днів\n\n`;
@@ -1466,28 +1486,30 @@ txt+="\n";
 txt+=`РАЗОМ: ${g.items.length} позицій, ~${Math.round(g.total)} грн\n`;
 return txt;
 }
-function copyOrderText(supplierName){
-const txt=buildOrderText(supplierName);
+function copyOrderText(gi){
+if(event)event.stopPropagation();
+const txt=buildOrderText(gi);
 if(!txt)return;
-navigator.clipboard.writeText(txt).then(()=>{
-const el=event.target;const old=el.textContent;el.textContent="✓ Скопійовано";
-setTimeout(()=>{el.textContent=old},1500);
-}).catch(()=>{
-// Fallback
-const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
-const el=event.target;const old=el.textContent;el.textContent="✓ Скопійовано";setTimeout(()=>{el.textContent=old},1500);
+const btn=event&&event.target;
+const flash=()=>{if(!btn)return;const old=btn.textContent;btn.textContent="✓ Скопійовано";setTimeout(()=>{btn.textContent=old},1500)};
+if(navigator.clipboard&&navigator.clipboard.writeText){
+navigator.clipboard.writeText(txt).then(flash).catch(()=>{
+const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);flash();
 });
+}else{
+const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);flash();
 }
-function exportOrderCSV(supplierName){
-const data=buildOrders(ordersHorizon);
-const g=data.supplierOrders.find(s=>s.name===supplierName);
+}
+function exportOrderCSV(gi){
+if(event)event.stopPropagation();
+const g=(window._ordersGroups||[])[gi];
 if(!g)return;
 const rows=[["№","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
 g.items.forEach((it,i)=>rows.push([i+1,it.drugName,it.contract,it.packsToOrder,it.pk,it.qtyInPurchaseUnits,it.f6Unit,it.pricePerPack||"",Math.round(it.costEstimate||0)]));
 rows.push(["","РАЗОМ","","","","","","",Math.round(g.total)]);
 const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
 const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");
-a.href="data:text/csv;base64,"+b64;a.download="zamovlennya_"+supplierName.replace(/[^а-яА-Яa-zA-Z0-9]/g,"_")+".csv";
+a.href="data:text/csv;base64,"+b64;a.download="zamovlennya_"+g.name.replace(/[^а-яА-Яa-zA-Z0-9]/g,"_")+".csv";
 document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
