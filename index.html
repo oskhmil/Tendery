@@ -160,7 +160,8 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="dev-credit">Developed by Ostap Khmil</div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
-<button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг</button>
+<button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
+<button class="hbtn" id="btn-consumption" onclick="switchView('consumption')">Моніторинг розходу</button>
 <button class="hbtn" id="btn-agreements" onclick="switchView('agreements')">Угоди</button>
 <button class="hbtn amber hidden" id="btn-conflicts" onclick="switchView('conflicts')">⚡ <span id="conflict-count">0</span></button>
 <button class="hbtn blue" onclick="loadFromDrive(true)">☁️ Оновити</button>
@@ -211,7 +212,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v22";
+const CACHE_KEY = "tendertrack_v23";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -537,6 +538,7 @@ function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pin
 function switchView(v){currentView=v;expandedCard=null;expandedAgr=null;render();updateNavBtns()}
 function updateNavBtns(){
 document.getElementById("btn-monitor").classList.toggle("active",currentView==="monitor");
+document.getElementById("btn-consumption").classList.toggle("active",currentView==="consumption");
 document.getElementById("btn-agreements").classList.toggle("active",currentView==="agreements");
 document.getElementById("btn-conflicts").classList.toggle("active",currentView==="conflicts");
 }
@@ -596,6 +598,7 @@ pw.classList.remove("hidden");sw.classList.add("hidden");
 }else{pw.classList.add("hidden");sw.classList.remove("hidden")}
 const el=document.getElementById("main-screen");
 if(currentView==="monitor")renderMonitor(el);
+else if(currentView==="consumption")renderConsumption(el);
 else if(currentView==="agreements")renderAgreements(el);
 else if(currentView==="conflicts")renderConflicts(el);
 }
@@ -697,6 +700,10 @@ h+=`</div>`;
 h+=`</div></div>`;
 });
 el.innerHTML=h;
+}
+
+function renderConsumption(el){
+el.innerHTML='<div class="empty-state" style="padding:40px 20px"><div style="font-size:44px;margin-bottom:14px">📊</div><div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Моніторинг розходу</div><div style="font-size:13px;line-height:1.5;max-width:420px;margin:0 auto">Тут буде аналіз розходу ліків за Формою 6: середньоденне використання, прогноз на 30/60/90/180 днів, дефіцит і потреба в закупівлях.</div><div style="font-size:12px;color:var(--muted);margin-top:16px;font-style:italic">🚧 У розробці</div></div>';
 }
 
 function renderConflicts(el){
