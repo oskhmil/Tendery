@@ -173,8 +173,10 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <button class="hbtn" id="btn-consumption" onclick="switchView('consumption')">Моніторинг розходу</button>
 <button class="hbtn" id="btn-agreements" onclick="switchView('agreements')">Угоди</button>
 <button class="hbtn amber hidden" id="btn-conflicts" onclick="switchView('conflicts')">⚡ <span id="conflict-count">0</span></button>
-<button class="hbtn blue" onclick="loadFromDrive(true)">☁️ Оновити</button>
-<button class="hbtn" onclick="showManualUpload()">📂</button>
+<button class="hbtn blue" id="btn-refresh" onclick="loadFromDrive(true)">☁️ Оновити</button>
+<button class="hbtn" id="btn-upload" onclick="showManualUpload()">📂</button>
+<button class="hbtn blue hidden" id="btn-f6-refresh" onclick="loadF6FromDrive(true)">☁️ Оновити</button>
+<button class="hbtn hidden" id="btn-f6-upload" onclick="showScreen('f6start')">📂</button>
 </div>
 </div>
 <div id="search-area" class="hidden">
@@ -234,6 +236,23 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 </div>
 <div id="start-error"></div>
 </div>
+<div id="f6-start-screen" class="hidden">
+<div style="text-align:center;padding:20px 16px 10px">
+<div style="font-size:40px;margin-bottom:10px">📊</div>
+<div class="start-title" style="font-size:20px;margin-bottom:4px">Моніторинг розходу</div>
+<div class="start-sub" style="margin-bottom:16px">Завантажте Форму 6, щоб побачити аналіз</div>
+</div>
+<button class="big-btn" onclick="loadF6FromDrive(false)">☁️ Завантажити з Google Drive</button>
+<div class="or-div">або з пристрою</div>
+<div class="upload-zone" id="f6-uz-manual" onclick="showF6ManualFields()">📂 Форма 6 (.xlsx)</div>
+<div id="f6-manual-fields" class="hidden">
+<div class="upload-zone" onclick="event.stopPropagation();document.getElementById('file-f6').click()">
+<input id="file-f6" type="file" accept=".xlsx,.xls" style="display:none" onchange="handleF6File(this.files[0])">
+Обрати файл Форми 6
+</div>
+</div>
+<div id="f6-start-error"></div>
+</div>
 <div id="loader"><div class="loader-ico"><span class="loader-spin">⟳</span></div><div id="loader-text">Завантаження...</div></div>
 <div id="main-screen" class="hidden"></div>
 </div>
@@ -242,7 +261,8 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 // ═══════ CONFIG ═══════
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v24";
+const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
+const CACHE_KEY = "tendertrack_v25";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -254,26 +274,50 @@ let parsedPurchases=null;
 let lastUpdated=null;
 let showAllCards=false;
 
+// Розхід (Форма 6) state
+let f6Months=[];           // [{sheet, periodStart, periodEnd, days, drugs}]
+let f6LastUpdated=null;
+let f6Horizon=90;          // 30/60/90/180
+let f6Filter="all";        // all/deficit/critical/warning/ok
+let f6Sort="daysLeft";     // daysLeft/name/rate/stock
+let f6Search="";
+let f6ExpandedCard=null;
+let f6ShowAllCards=false;
+
 function toggleFilter(k){
 if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
 else{showAllCards=false;currentFilter=currentFilter===k?"all":k}
 render();
 }
+function toggleF6Filter(k){
+if(k==="all"){if(f6Filter==="all"){f6ShowAllCards=!f6ShowAllCards}else{f6Filter="all";f6ShowAllCards=true}}
+else{f6ShowAllCards=false;f6Filter=f6Filter===k?"all":k}
+render();
+}
 
 // ═══════ CACHE ═══════
 function saveCache(){
-try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,purchases:parsedPurchases,ts:Date.now()}))}catch(e){
+const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
+try{localStorage.setItem(CACHE_KEY,JSON.stringify(payload))}catch(e){
 console.warn("Cache full, saving without purchases",e);
-try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,ts:Date.now()}))}catch{}
+try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}))}catch{}
 }
 }
 function loadCache(){
 try{
 const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
 const d=JSON.parse(r);
-if(!d||!Array.isArray(d.data)||!Array.isArray(d.tenders))return null;
-if(!d.data.length||typeof d.data[0].n!=="string")return null;
-if(!d.tenders.length||typeof d.tenders[0].supplier!=="string")return null;
+if(!d)return null;
+// Revive dates in f6
+if(Array.isArray(d.f6)){
+d.f6.forEach(m=>{
+if(m.periodStart)m.periodStart=new Date(m.periodStart);
+if(m.periodEnd)m.periodEnd=new Date(m.periodEnd);
+});
+}else{d.f6=[]}
+// Validate monitor part (can be empty if user only uses Розхід)
+if(!Array.isArray(d.data))d.data=[];
+if(!Array.isArray(d.tenders))d.tenders=[];
 if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
 return d;
 }catch{return null}
@@ -361,6 +405,81 @@ if(!alloc[name])alloc[name]={};
 alloc[name][sup]=qty;
 }
 return alloc;
+}
+
+// ═══════ ФОРМА 6 PARSER ═══════
+function parseForma6(buf){
+const wb=XLSX.read(buf,{type:"array"});
+const months=[];
+const reDate=/(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/g;
+for(const sn of wb.SheetNames){
+const ws=wb.Sheets[sn];
+const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+if(rows.length<13)continue;
+const header=rows[8]?String(rows[8][0]||""):"";
+const matches=[...header.matchAll(reDate)];
+if(matches.length<2)continue;
+const m1=matches[0],m2=matches[1];
+const periodStart=new Date(parseInt(m1[3]),parseInt(m1[2])-1,parseInt(m1[1]));
+const periodEnd=new Date(parseInt(m2[3]),parseInt(m2[2])-1,parseInt(m2[1]));
+const days=Math.max(1,Math.round((periodEnd-periodStart)/(1000*60*60*24))+1);
+const drugs={};
+for(let i=12;i<rows.length;i++){
+const r=rows[i];if(!r)continue;
+const name=r[1];if(!name||String(name).trim()==="")continue;
+const nm=String(name).trim().replace(/\s+/g," ");
+const unit=r[3]?String(r[3]).trim():"";
+const startQ=typeof r[4]==="number"?r[4]:0;
+const incomeQ=typeof r[5]==="number"?r[5]:0;
+const usedQ=typeof r[6]==="number"?r[6]:0;
+const endQ=typeof r[7]==="number"?r[7]:0;
+if(!unit&&startQ===0&&incomeQ===0&&usedQ===0&&endQ===0)continue;
+drugs[nm]={unit,start:startQ,income:incomeQ,used:usedQ,end:endQ};
+}
+months.push({sheet:sn,periodStart,periodEnd,days,drugs});
+}
+if(!months.length)throw new Error("Форма 6: не знайдено жодного листа з коректним періодом. Перевірте формат (рядок 9 має містити 'за період з DD.MM.YYYY до DD.MM.YYYY').");
+months.sort((a,b)=>a.periodStart-b.periodStart);
+return months;
+}
+
+// Analyze all drugs across months for given horizon (days)
+function analyzeF6(months,horizonDays){
+if(!months.length)return{items:[],periodStart:null,periodEnd:null};
+const allNames=new Set();
+months.forEach(m=>Object.keys(m.drugs).forEach(n=>allNames.add(n)));
+const items=[];
+for(const name of allNames){
+let firstIdx=-1,totalUsed=0,totalDays=0,unit="",stock=0;
+const monthly=[];
+for(let i=0;i<months.length;i++){
+const d=months[i].drugs[name];
+monthly.push(d||null);
+if(!d)continue;
+if(!unit)unit=d.unit;
+const active=(d.used>0||d.income>0||d.start>0||d.end>0);
+if(active&&firstIdx<0)firstIdx=i;
+if(firstIdx>=0&&i>=firstIdx){totalUsed+=d.used;totalDays+=months[i].days}
+if(d.end!==undefined)stock=d.end;
+}
+if(firstIdx<0)continue;
+const dailyRate=totalDays>0?totalUsed/totalDays:0;
+const need=dailyRate*horizonDays;
+const deficit=Math.max(0,need-stock);
+const daysLeft=dailyRate>0?stock/dailyRate:99999;
+items.push({name,unit,stock,totalUsed,totalDays,dailyRate,firstMonth:months[firstIdx].sheet,monthly,need,deficit,daysLeft});
+}
+return{items,periodStart:months[0].periodStart,periodEnd:months[months.length-1].periodEnd};
+}
+
+function f6Status(it,horizon){
+// deficit: stock is effectively zero AND drug is actively being used
+if(it.stock<=0&&it.dailyRate>0)return"deficit";
+// critical: will run out before horizon ends
+if(it.dailyRate>0&&it.daysLeft<horizon)return"critical";
+// warning: will last horizon but less than 1.5x horizon (close call)
+if(it.dailyRate>0&&it.daysLeft<horizon*1.5)return"warning";
+return"ok";
 }
 
 // ═══════ MATCHING ═══════
@@ -555,31 +674,74 @@ reader.readAsArrayBuffer(file);
 function showManualUpload(){showScreen("start")}
 function showManualFields(){document.getElementById("manual-fields").classList.remove("hidden");document.getElementById("uz-manual").classList.add("hidden")}
 
+// ─── Форма 6 loaders ───
+async function loadF6FromDrive(isRefresh){
+if(!isRefresh&&f6Months.length){showMain();fetchF6Background();return}
+showLoader(isRefresh?"Оновлюємо Форму 6...":"Завантажуємо Форму 6...");
+await fetchF6Background(true);
+}
+async function fetchF6Background(showErr){
+try{
+const buf=await fetch(GDRIVE_F6).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()});
+f6Months=parseForma6(buf);
+f6LastUpdated=new Date();
+saveCache();
+const onHome=!document.getElementById("home-screen").classList.contains("hidden");
+if(!onHome&&currentView==="consumption")showMain();
+}catch(e){if(showErr){document.getElementById("f6-start-error").innerHTML='<div class="err-box">Помилка: '+esc(e.message)+'</div>';showScreen("f6start")}}
+}
+function handleF6File(file){
+if(!file)return;
+const reader=new FileReader();
+reader.onload=e=>{
+try{
+showLoader("Обробка Форми 6...");
+setTimeout(()=>{
+f6Months=parseForma6(e.target.result);
+f6LastUpdated=new Date();
+saveCache();showMain();
+},50);
+}catch(err){document.getElementById("f6-start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>';showScreen("f6start")}
+};
+reader.readAsArrayBuffer(file);
+}
+function showF6ManualFields(){document.getElementById("f6-manual-fields").classList.remove("hidden");document.getElementById("f6-uz-manual").classList.add("hidden")}
+
 // ═══════ SCREENS ═══════
 function showScreen(name){
 document.getElementById("home-screen").classList.toggle("hidden",name!=="home");
 document.getElementById("start-screen").classList.toggle("hidden",name!=="start");
+document.getElementById("f6-start-screen").classList.toggle("hidden",name!=="f6start");
 document.getElementById("loader").classList.toggle("hidden",name!=="loader");
 document.getElementById("main-screen").classList.toggle("hidden",name!=="main");
-// Nav buttons and search shown only when inside a section (main or start/loader of that section)
-const inSection=(name==="main"||name==="start"||name==="loader");
+// Nav buttons shown inside any section (main/start/f6start/loader); search only on main
+const inSection=(name==="main"||name==="start"||name==="f6start"||name==="loader");
 document.getElementById("nav-btns").classList.toggle("hidden",!inSection);
-document.getElementById("search-area").classList.toggle("hidden",name!=="main");
+// Search bar — only for monitor/agreements/conflicts on main; consumption has its own controls
+const showSearch=(name==="main"&&currentView!=="consumption");
+document.getElementById("search-area").classList.toggle("hidden",!showSearch);
 }
 function showLoader(msg){showScreen("loader");document.getElementById("loader-text").textContent=msg}
 function showMain(){showScreen("main");render()}
 function showHome(){showScreen("home")}
-function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pinnedSearch="";expandedCard=null;const si=document.getElementById("search-input");if(si)si.value="";showHome()}
+function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pinnedSearch="";expandedCard=null;f6ExpandedCard=null;const si=document.getElementById("search-input");if(si)si.value="";showHome()}
 function enterSection(v){
-currentView=v;expandedCard=null;expandedAgr=null;
-if(v==="consumption"){showMain();return}
-// monitor — need data loaded
+currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;
+if(v==="consumption"){
+if(f6Months.length>0){showMain()}else{showScreen("f6start")}
+return;
+}
+// monitor / agreements / conflicts — need purchases data loaded
 if(allData.length>0){showMain()}else{showScreen("start")}
 }
 
 // ═══════ VIEW SWITCHING ═══════
 function switchView(v){
-currentView=v;expandedCard=null;expandedAgr=null;
+currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;
+if(v==="consumption"){
+if(f6Months.length===0){showScreen("f6start");updateNavBtns();return}
+showMain();updateNavBtns();return;
+}
 if((v==="monitor"||v==="agreements"||v==="conflicts")&&allData.length===0){showScreen("start");updateNavBtns();return}
 render();updateNavBtns();
 }
@@ -634,15 +796,29 @@ const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement
 function render(){
 const mc=allData.filter(d=>d.multi&&!d.alloc&&!d.chosen).length;
 const cBtn=document.getElementById("btn-conflicts");
-cBtn.classList.toggle("hidden",mc===0);document.getElementById("conflict-count").textContent=mc;
+const isConsumption=(currentView==="consumption");
+// Agreements / Conflicts / ☁️ / 📂 belong to purchases section — hide on consumption
+document.getElementById("btn-agreements").classList.toggle("hidden",isConsumption);
+cBtn.classList.toggle("hidden",isConsumption||mc===0);
+document.getElementById("conflict-count").textContent=mc;
+document.getElementById("btn-refresh").classList.toggle("hidden",isConsumption);
+document.getElementById("btn-upload").classList.toggle("hidden",isConsumption);
+// On consumption, add its own refresh/upload buttons
+document.getElementById("btn-f6-refresh").classList.toggle("hidden",!isConsumption);
+document.getElementById("btn-f6-upload").classList.toggle("hidden",!isConsumption);
 updateNavBtns();
+// Search bar toggling (only for purchases views)
 const pw=document.getElementById("pinned-wrap");
 const sw=document.getElementById("search-wrap");
+const searchArea=document.getElementById("search-area");
+searchArea.classList.toggle("hidden",isConsumption);
+if(!isConsumption){
 if(pinnedSearch){
 const mLabel={name:"Назва:",mnn:"МНН:",supplier:"Постач.:",contract:"Угода:"}[searchMode]||"";
 pw.innerHTML='<div class="pinned-tag"><span style="color:var(--muted);font-size:11px">'+mLabel+'</span> <strong>'+esc(pinnedSearch)+'</strong><span class="x" onclick="unpinSearch()">×</span></div>';
 pw.classList.remove("hidden");sw.classList.add("hidden");
 }else{pw.classList.add("hidden");sw.classList.remove("hidden")}
+}
 const el=document.getElementById("main-screen");
 if(currentView==="monitor")renderMonitor(el);
 else if(currentView==="consumption")renderConsumption(el);
@@ -750,8 +926,125 @@ el.innerHTML=h;
 }
 
 function renderConsumption(el){
-el.innerHTML='<div class="empty-state" style="padding:40px 20px"><div style="font-size:44px;margin-bottom:14px">📊</div><div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Моніторинг розходу</div><div style="font-size:13px;line-height:1.5;max-width:420px;margin:0 auto">Тут буде аналіз розходу ліків за Формою 6: середньоденне використання, прогноз на 30/60/90/180 днів, дефіцит і потреба в закупівлях.</div><div style="font-size:12px;color:var(--muted);margin-top:16px;font-style:italic">🚧 У розробці</div></div>';
+if(!f6Months.length){el.innerHTML='';return}
+const analysis=analyzeF6(f6Months,f6Horizon);
+const items=analysis.items;
+const q=f6Search.trim().toLowerCase();
+let filtered=items;
+if(q){const w=q.split(/\s+/).filter(Boolean);filtered=filtered.filter(it=>{const n=it.name.toLowerCase();return w.every(x=>n.includes(x))})}
+const counts={all:items.length,deficit:0,critical:0,warning:0,ok:0};
+items.forEach(it=>{counts[f6Status(it,f6Horizon)]++});
+if(f6Filter!=="all")filtered=filtered.filter(it=>f6Status(it,f6Horizon)===f6Filter);
+// sort
+filtered=[...filtered];
+if(f6Sort==="daysLeft")filtered.sort((a,b)=>a.daysLeft-b.daysLeft);
+else if(f6Sort==="name")filtered.sort((a,b)=>a.name.localeCompare(b.name,"uk"));
+else if(f6Sort==="rate")filtered.sort((a,b)=>b.dailyRate-a.dailyRate);
+else if(f6Sort==="stock")filtered.sort((a,b)=>a.stock-b.stock);
+
+// Header: period info + horizon selector + search
+let h='';
+h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
+h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Період аналізу</div>';
+h+=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${fmtDate(analysis.periodStart)} — ${fmtDate(analysis.periodEnd)} <span style="color:var(--muted);font-weight:400">(${f6Months.length} міс.)</span></div>`;
+h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Горизонт планування</div>';
+h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
+for(const d of [30,60,90,180])h+=`<button class="mode-btn${f6Horizon===d?" active":""}" onclick="f6Horizon=${d};render()">${d} днів</button>`;
+h+='</div></div>';
+
+// Search
+h+='<div class="search-wrap" style="margin-bottom:10px"><span class="search-ico">🔍</span>';
+h+=`<input id="f6-search" placeholder="Пошук препарату..." value="${esc(f6Search)}" oninput="f6Search=this.value;clearTimeout(window._f6st);window._f6st=setTimeout(render,200)"></div>`;
+
+// Stats bar
+h+='<div class="stats-bar" style="grid-template-columns:repeat(5,1fr)">';
+const lbls=[["all","Усі","var(--accent)"],["deficit","Дефіцит","var(--danger)"],["critical","Критично","var(--orange)"],["warning","Увага","var(--warn)"],["ok","Норма","var(--green)"]];
+for(const[k,l,c]of lbls){
+const active=(k==="all"?(f6ShowAllCards&&f6Filter==="all"):f6Filter===k);
+h+=`<div class="stat-card${active?" active":""}" onclick="toggleF6Filter('${k}')"><div class="stat-num" style="color:${c}">${counts[k]||0}</div><div class="stat-lbl">${l}</div></div>`;
 }
+h+='</div>';
+if(f6LastUpdated)h+=`<div style="text-align:center;font-size:10px;color:var(--muted);margin-bottom:8px">Оновлено: ${f6LastUpdated.toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})} · <span style="cursor:pointer;color:var(--blue)" onclick="loadF6FromDrive(true)">☁️ оновити</span></div>`;
+
+// Sort row + export
+h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
+for(const[k,l]of[["daysLeft","Днів ↑"],["name","Назва"],["rate","Темп ↓"],["stock","Залишок ↑"]])h+=`<button class="sort-btn${f6Sort===k?" active":""}" onclick="f6Sort='${k}';render()">${l}</button>`;
+h+=`</div><span style="font-size:12px;color:var(--muted)">${filtered.length} поз.</span></div>`;
+h+='<div class="export-row"><span style="color:var(--muted)">Експорт:</span>';
+h+='<button class="exp-btn" style="color:var(--danger)" onclick="exportF6([\'deficit\',\'critical\'])">Дефіцит + Критично</button>';
+h+='<button class="exp-btn" style="color:#fff" onclick="exportF6([\'deficit\',\'critical\',\'warning\',\'ok\'])">Усе</button>';
+h+='</div>';
+
+const showCards=(f6Filter!=="all")||f6ShowAllCards||!!q;
+if(!showCards){
+h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
+el.innerHTML=h;return;
+}
+if(!filtered.length){h+='<div class="empty-state">Нічого не знайдено</div>';el.innerHTML=h;return}
+
+for(const it of filtered){
+const st=f6Status(it,f6Horizon);
+const stColor={deficit:"var(--danger)",critical:"var(--orange)",warning:"var(--warn)",ok:"var(--green)"}[st];
+const stEmoji={deficit:"🔴",critical:"🟠",warning:"🟡",ok:"🟢"}[st];
+const pct=Math.min(it.daysLeft/f6Horizon*100,100);
+const isExp=f6ExpandedCard===it.name;
+const linkedMonitor=allData.find(d=>d.n===it.name);
+h+=`<div class="card${isExp?" expanded":""}" onclick="f6ExpandedCard=f6ExpandedCard===${JSON.stringify(it.name)}?null:${JSON.stringify(it.name)};render()">`;
+h+=`<div class="card-head"><div class="card-top">`;
+h+=`<div style="font-size:22px;line-height:1;margin-top:2px">${stEmoji}</div>`;
+h+=`<div class="card-info"><div class="drug-name">${hlPlain(it.name,q)}</div>`;
+h+=`<div class="mnn-line">Темп: ${it.dailyRate.toFixed(2)} ${esc(it.unit)}/день · з ${esc(it.firstMonth)}</div>`;
+h+=`</div><div class="card-qty"><div class="num" style="color:${stColor}">${it.daysLeft>=9999?"∞":it.daysLeft.toFixed(0)+"д"}</div><div class="unit">залишилось</div></div></div></div>`;
+h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${stColor}"></div></div><span class="bar-pct">${it.daysLeft>=9999?"—":Math.round(pct)+"%"}</span></div>`;
+h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
+h+=`<div class="detail-grid">`;
+h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val">${fmt(it.stock)} ${esc(it.unit)}</div></div>`;
+h+=`<div class="mini-stat"><div class="lbl">Використано за період</div><div class="val">${fmt(it.totalUsed)} ${esc(it.unit)}</div></div>`;
+h+=`<div class="mini-stat"><div class="lbl">Потреба на ${f6Horizon}д</div><div class="val">${fmt(Math.round(it.need))} ${esc(it.unit)}</div></div>`;
+h+=`<div class="mini-stat"><div class="lbl">Дефіцит</div><div class="val" style="color:${it.deficit>0?"var(--danger)":"var(--green)"}">${it.deficit>0?fmt(Math.round(it.deficit))+" "+esc(it.unit):"немає"}</div></div>`;
+h+=`</div>`;
+// Monthly breakdown
+h+='<div style="font-size:12px;font-weight:600;margin-bottom:6px">По місяцях:</div>';
+h+='<div style="display:grid;grid-template-columns:1fr;gap:4px">';
+for(let i=0;i<f6Months.length;i++){
+const m=f6Months[i],d=it.monthly[i];
+h+=`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 8px;background:rgba(255,255,255,.04);border-radius:6px">`;
+h+=`<span style="font-weight:600">${esc(m.sheet)} <span style="color:var(--muted);font-weight:400">(${m.days}д)</span></span>`;
+if(d)h+=`<span>поч: <strong>${fmt(d.start)}</strong> · +${fmt(d.income)} · −${fmt(d.used)} · кін: <strong>${fmt(d.end)}</strong></span>`;
+else h+=`<span style="color:var(--muted);font-style:italic">—</span>`;
+h+=`</div>`;
+}
+h+='</div>';
+// Cross-link to monitor
+if(linkedMonitor)h+=`<button class="exp-btn" style="margin-top:10px;background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent);font-size:12px;padding:8px 14px;width:100%" onclick="gotoMonitor(${JSON.stringify(it.name)})">📦 Показати в «Моніторинг закупівель»</button>`;
+else h+=`<div style="margin-top:10px;padding:8px;background:rgba(255,255,255,.04);border-radius:8px;font-size:11px;color:var(--muted);text-align:center">Не знайдено в закупівлях/тендерах</div>`;
+h+=`</div></div>`;
+}
+el.innerHTML=h;
+}
+
+// Cross-navigation: jump to monitor tab with card expanded
+function gotoMonitor(drugName){
+if(allData.length===0){alert("Дані закупівель ще не завантажено. Спочатку відкрийте «Моніторинг закупівель».");return}
+currentView="monitor";currentFilter="all";showAllCards=true;
+searchMode="name";currentSearch=drugName;pinnedSearch="";
+expandedCard=drugName;
+const si=document.getElementById("search-input");if(si)si.value=drugName;
+showMain();updateNavBtns();
+setTimeout(()=>{const cards=document.querySelectorAll(".card.expanded");if(cards.length)cards[0].scrollIntoView({behavior:"smooth",block:"center"})},100);
+}
+
+function exportF6(statuses){
+const analysis=analyzeF6(f6Months,f6Horizon);
+const items=analysis.items.filter(it=>statuses.includes(f6Status(it,f6Horizon)));
+const rows=[["Назва","Од.вим.","Залишок","Використано за період","Темп/день","Днів вистачить","Потреба на "+f6Horizon+"д","Дефіцит","Перший місяць активності"]];
+items.forEach(it=>rows.push([it.name,it.unit,it.stock,it.totalUsed,it.dailyRate.toFixed(2),it.daysLeft>=9999?"∞":it.daysLeft.toFixed(1),Math.round(it.need),Math.round(it.deficit),it.firstMonth]));
+const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
+const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");a.href="data:text/csv;base64,"+b64;a.download="rozhid.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
+
+function fmtDate(d){if(!d)return"—";return d.toLocaleDateString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric"})}
+function hlPlain(text,q){if(!q)return esc(text);const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return esc(text);const re=new RegExp("("+words.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");return esc(text).replace(re,"<mark>$1</mark>")}
 
 function renderConflicts(el){
 const conflicts=allData.filter(d=>d.multi&&!d.alloc);
@@ -772,9 +1065,14 @@ el.innerHTML=h;
 // ═══════ INIT ═══════
 (function(){
 const c=loadCache();
-if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;
+if(c){
+allData=c.data||[];allTenders=c.tenders||[];
+lastUpdated=c.ts?new Date(c.ts):null;
 if(c.purchases)parsedPurchases=c.purchases;
-fetchDriveBackground();
+if(Array.isArray(c.f6))f6Months=c.f6;
+if(c.f6ts)f6LastUpdated=new Date(c.f6ts);
+if(allData.length)fetchDriveBackground();
+if(f6Months.length)fetchF6Background();
 }
 showHome();
 })();
