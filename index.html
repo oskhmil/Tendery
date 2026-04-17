@@ -262,7 +262,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v28";
+const CACHE_KEY = "tendertrack_v29";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -744,7 +744,11 @@ function goHome(){currentView="monitor";currentFilter="all";currentSearch="";pin
 function enterSection(v){
 currentView=v;expandedCard=null;expandedAgr=null;f6ExpandedCard=null;
 if(v==="consumption"){
-if(f6Months.length>0){showMain()}else{showScreen("f6start")}
+if(f6Months.length>0){
+showMain();
+// Preload purchases data in background so cross-nav (findInMonitor) works
+if(allData.length===0)fetchDriveBackground();
+}else{showScreen("f6start")}
 return;
 }
 // monitor / agreements / conflicts — need purchases data loaded
@@ -1227,6 +1231,8 @@ if(Array.isArray(c.f6))f6Months=c.f6;
 if(c.f6ts)f6LastUpdated=new Date(c.f6ts);
 if(allData.length)fetchDriveBackground();
 if(f6Months.length)fetchF6Background();
+// If user has F6 but no purchases data — preload for cross-nav
+if(f6Months.length&&allData.length===0)fetchDriveBackground();
 }
 showHome();
 })();
