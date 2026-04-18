@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v35";
+const CACHE_KEY = "tendertrack_v36";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -785,6 +785,24 @@ let venPopupFor=null;              // drug name for which VEN popup is open
 let ordersBudgetEnabled=false;     // limited budget mode
 let ordersBudget=0;                // UAH
 let ordersQtyOverride={};          // {drugName: packsToOrder} — user-edited qty
+
+// Manual additional order lines: {drugName, supplier, contract, packUnit, pk, packsToOrder, pricePerPack, note}
+let ordersManual=[];
+
+// Track which order lines are "pending" — already placed with supplier, waiting for delivery
+// Key: drugName + "|" + supplierName. Value: {ts: ISO date string, note: optional}
+let ordersPending={};
+
+// Manual-add dialog state
+let ordersAddDialog=false;
+let ordersAddQuery="";
+let ordersAddPicked=null; // tender object picked from search
+let ordersAddPacks=1;
+
+// Filters
+let ordersVenFilter="all";    // "all" | "V" | "E" | "N"
+let ordersAbcFilter="all";    // "all" | "A" | "B" | "C"
+let ordersHidePending=false;  // if true, hide items marked as pending
 
 function toggleFilter(k){
 if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
@@ -1395,6 +1413,27 @@ else if(currentView==="consumption")renderConsumption(el);
 else if(currentView==="orders")renderOrders(el);
 else if(currentView==="agreements")renderAgreements(el);
 else if(currentView==="conflicts")renderConflicts(el);
+// Global VEN popup overlay (rendered on top of any view)
+if(venPopupFor){
+  const overlay=document.getElementById("ven-popup-overlay")||(()=>{const d=document.createElement("div");d.id="ven-popup-overlay";document.body.appendChild(d);return d})();
+  overlay.innerHTML=buildVenPopup();
+}else{
+  const overlay=document.getElementById("ven-popup-overlay");
+  if(overlay)overlay.innerHTML="";
+}
+// Global Add-Manual dialog (orders view only)
+if(ordersAddDialog){
+  const overlay=document.getElementById("add-dialog-overlay")||(()=>{const d=document.createElement("div");d.id="add-dialog-overlay";document.body.appendChild(d);return d})();
+  overlay.innerHTML=buildAddDialog();
+  // After rendering, wire up input listeners since they need live updates
+  setTimeout(()=>{
+    const inp=document.getElementById("add-search-input");
+    if(inp&&document.activeElement!==inp)inp.focus();
+  },0);
+}else{
+  const overlay=document.getElementById("add-dialog-overlay");
+  if(overlay)overlay.innerHTML="";
+}
 }
 
 function renderMonitor(el){
@@ -1432,6 +1471,7 @@ h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclic
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
 h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q:"")}</div>`;
+h+=`<div style="margin-top:2px" onclick="event.stopPropagation();openVenPopupMonitor(${JSON.stringify(d.n).replace(/"/g,'&quot;')})">${comboBadge(d.n,mnn)}</div>`;
 if(mnn)h+=`<div class="mnn-line">${hl(mnn,searchMode==="mnn"?q:"")}</div>`;
 if(hasConflict)h+=`<div class="conflict-hint">⚡ ${d.multi.length} постачальники — оберіть</div>`;
 if(d.chosen)h+=`<div class="chosen-hint">✓ ${esc(d.chosen)}</div>`;
@@ -1586,6 +1626,9 @@ h+=`<div class="card${isExp?" expanded":""}" onclick="toggleF6Card(${idx})">`;
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<div style="font-size:22px;line-height:1;margin-top:2px">${stEmoji}</div>`;
 h+=`<div class="card-info"><div class="drug-name">${hlPlain(it.name,q)}</div>`;
+const _f6mnn=linkedMonitor&&linkedMonitor.t&&linkedMonitor.t[0]?linkedMonitor.t[0].mn:"";
+const _f6resolvedName=linkedMonitor?linkedMonitor.n:it.name;
+h+=`<div style="margin-top:2px" onclick="event.stopPropagation();openVenPopupMonitor(${JSON.stringify(_f6resolvedName).replace(/"/g,'&quot;')})">${comboBadge(_f6resolvedName,_f6mnn)}</div>`;
 h+=`<div class="mnn-line">Темп: ${it.dailyRate.toFixed(2)} ${esc(it.unit)}/день · з ${esc(it.firstMonth)}</div>`;
 h+=`</div><div class="card-qty"><div class="num" style="color:${stColor}">${it.daysLeft>=9999?"∞":it.daysLeft.toFixed(0)+"д"}</div><div class="unit">залишилось</div></div></div></div>`;
 h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${stColor}"></div></div><span class="bar-pct">${it.daysLeft>=9999?"—":Math.round(pct)+"%"}</span></div>`;
@@ -1761,20 +1804,92 @@ function mnnInWHO_EML(mnn){
   }
   return false;
 }
-function getVen(drugName){
-  return venCategories[drugName]||"E";
-}
 function setVen(drugName,cat){
-  if(cat==="E")delete venCategories[drugName];
-  else venCategories[drugName]=cat;
+  // "E" is default, but we still save explicitly so that E chosen by user over auto-V persists
+  venCategories[drugName]=cat;
   try{localStorage.setItem(CACHE_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
 }
 function loadVen(){
   try{const s=localStorage.getItem(CACHE_KEY+"_ven");if(s)venCategories=JSON.parse(s)||{}}catch(e){}
+  try{const s=localStorage.getItem(CACHE_KEY+"_manual");if(s)ordersManual=JSON.parse(s)||[]}catch(e){}
+  try{const s=localStorage.getItem(CACHE_KEY+"_pending");if(s)ordersPending=JSON.parse(s)||{}}catch(e){}
+  try{const s=localStorage.getItem(CACHE_KEY+"_qty");if(s)ordersQtyOverride=JSON.parse(s)||{}}catch(e){}
 }
-// UI: colored badge for category
+function saveManual(){try{localStorage.setItem(CACHE_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
+function savePending(){try{localStorage.setItem(CACHE_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
+function saveQtyOverride(){try{localStorage.setItem(CACHE_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
+// Automatic VEN: WHO EML → V by default; user override takes precedence
+function getVen(drugName,mnn){
+  // User override wins (even if user set to N for something in EML)
+  if(venCategories[drugName])return venCategories[drugName];
+  // Auto: WHO EML → V; otherwise E (safe default — essential, not N)
+  if(mnn&&mnnInWHO_EML(mnn))return"V";
+  return"E";
+}
+// ABC analysis — recomputed on demand from allData.
+// Cumulative cost: top items totaling ≤80% = A, next ≤15% = B, rest = C.
+// Cache for performance.
+let _abcCache=null, _abcKey=null;
+function buildAbc(){
+  const key=allData.length+"|"+(allData[0]?allData[0].n:"");
+  if(_abcCache&&_abcKey===key)return _abcCache;
+  const items=allData.filter(d=>d.ps>0||(d.t.length&&d.t[0].p!=null&&d.tq>0));
+  items.forEach(d=>{
+    // Prefer actual spend (ps); fallback to tender value
+    d._spend=d.ps>0?d.ps:((d.t[0]&&d.t[0].p!=null)?d.t[0].p*d.tq:0);
+  });
+  const sorted=items.slice().sort((a,b)=>(b._spend||0)-(a._spend||0));
+  const totalSpend=sorted.reduce((s,d)=>s+(d._spend||0),0);
+  const cat={};
+  let cum=0;
+  for(const d of sorted){
+    cum+=(d._spend||0);
+    const share=totalSpend>0?cum/totalSpend:0;
+    if(share<=0.80)cat[d.n]="A";
+    else if(share<=0.95)cat[d.n]="B";
+    else cat[d.n]="C";
+  }
+  _abcCache=cat;_abcKey=key;
+  return cat;
+}
+function getAbc(drugName){
+  if(!allData.length)return null;
+  const c=buildAbc();
+  return c[drugName]||null;
+}
+// Resolve MNN from allData (purchases/tenders) or from monitor data, for a drug name
+function mnnForDrug(drugName){
+  for(const d of allData){
+    if(d.n===drugName){
+      return d.t&&d.t[0]&&d.t[0].mn||"";
+    }
+  }
+  // Also try findInMonitor for F6 names
+  if(typeof findInMonitor==="function"){
+    const m=findInMonitor(drugName);
+    if(m)return m.t&&m.t[0]&&m.t[0].mn||"";
+  }
+  return "";
+}
+function comboCat(drugName,mnn){
+  const abc=getAbc(drugName);
+  const ven=getVen(drugName,mnn||mnnForDrug(drugName));
+  return{abc,ven,combo:(abc?abc+"/":"")+ven};
+}
+// Compact combined badge [A/V], [B/E] etc.
+function comboBadge(drugName,mnn){
+  const{abc,ven}=comboCat(drugName,mnn);
+  const venColors={V:"#22c55e",E:"#fbbf24",N:"#ef4444"};
+  const abcColors={A:"#0ea5e9",B:"#8b5cf6",C:"#64748b"};
+  let html='<span style="display:inline-flex;border-radius:4px;overflow:hidden;font-size:10px;font-weight:800;letter-spacing:.5px">';
+  if(abc)html+=`<span style="background:${abcColors[abc]};color:#0d1117;padding:1px 5px">${abc}</span>`;
+  html+=`<span style="background:${venColors[ven]};color:#0d1117;padding:1px 5px">${ven}</span>`;
+  html+='</span>';
+  return html;
+}
+
 function venBadge(cat){
-  const colors={V:"#ef4444",E:"#fbbf24",N:"#94a3b8"};
+  const colors={V:"#22c55e",E:"#fbbf24",N:"#ef4444"};
   const labels={V:"V",E:"E",N:"N"};
   return `<span style="display:inline-block;background:${colors[cat]};color:#0d1117;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:.5px">${labels[cat]}</span>`;
 }
@@ -1829,10 +1944,11 @@ const overridden=(ordersQtyOverride[l.drugName]!=null);
 const packsToOrder=overridden?Math.max(0,ordersQtyOverride[l.drugName]|0):autoPacks;
 const shortfall=packsNeeded>packsAvailable?packsNeeded-packsAvailable:0;
 const costEstimate=sup.pricePerPack!=null?packsToOrder*sup.pricePerPack:null;
-// VEN: user setting wins; EML gives V-candidate hint
+// VEN: auto from WHO EML, user override wins
 const mnn=(l.monitor.t&&l.monitor.t[0]&&l.monitor.t[0].mn)||"";
-const ven=getVen(l.drugName);
-const emlCandidate=ven==="E"&&mnnInWHO_EML(mnn);
+const ven=getVen(l.drugName,mnn);
+const abc=getAbc(l.drugName);
+const emlCandidate=!venCategories[l.drugName]&&mnnInWHO_EML(mnn); // auto-set hint only if no user override
 if(!bySupplierGroup[sup.name])bySupplierGroup[sup.name]={name:sup.name,items:[],total:0};
 bySupplierGroup[sup.name].items.push({
 drugName:l.drugName,
@@ -1845,10 +1961,40 @@ qtyInPurchaseUnits:packsToOrder*pk,
 pricePerPack:sup.pricePerPack,costEstimate,
 altSuppliers:l.suppliers.filter(s=>s.name!==sup.name).map(s=>s.name),
 allSuppliers:l.suppliers.map(s=>s.name),
-ven,emlCandidate,overridden,autoPacks,
+ven,abc,emlCandidate,overridden,autoPacks,
 });
 if(costEstimate!=null)bySupplierGroup[sup.name].total+=costEstimate;
 }
+
+// Append manually-added items
+for(const m of ordersManual){
+if(!m||!m.supplier||!m.drugName)continue;
+const packs=Math.max(0,parseInt(m.packsToOrder)||0);
+const pk=m.pk||1;
+const price=m.pricePerPack;
+const cost=price!=null?packs*price:null;
+const mnn=m.mnn||mnnForDrug(m.drugName);
+const ven=getVen(m.drugName,mnn);
+const abc=getAbc(m.drugName);
+if(!bySupplierGroup[m.supplier])bySupplierGroup[m.supplier]={name:m.supplier,items:[],total:0};
+bySupplierGroup[m.supplier].items.push({
+drugName:m.drugName,
+commercial:m.commercial||m.drugName,
+contract:m.contract||"",
+mnn,
+f6Unit:m.f6Unit||m.packUnit||"",stock:0,need:0,deficit:0,
+packUnit:m.packUnit||"уп",pk,
+packsNeeded:packs,packsAvailable:m.packsAvailable||packs,
+packsToOrder:packs,shortfall:0,
+qtyInPurchaseUnits:packs*pk,
+pricePerPack:price,costEstimate:cost,
+altSuppliers:[],allSuppliers:[m.supplier],
+ven,abc,emlCandidate:false,overridden:false,autoPacks:packs,
+manual:true,manualId:m.id,
+});
+if(cost!=null)bySupplierGroup[m.supplier].total+=cost;
+}
+
 const supplierOrders=Object.values(bySupplierGroup).sort((a,b)=>a.name.localeCompare(b.name,"uk"));
 return{lines,noMatch,noTender,supplierOrders,needPurchases:allData.length===0};
 }
@@ -1924,6 +2070,14 @@ h+=`<div style="margin-top:6px;font-size:11px;color:var(--muted)">Входить
 }
 h+='</div>';
 
+// Add-manual button
+h+='<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">';
+h+='<button class="exp-btn" style="background:rgba(59,130,246,.15);border-color:var(--blue);color:#93c5fd" onclick="openAddDialog()">➕ Додати позицію вручну</button>';
+if(ordersManual.length)h+=`<span style="padding:5px 0;font-size:11px;color:var(--muted)">Додано вручну: <strong>${ordersManual.length}</strong></span>`;
+const pendingCount=Object.keys(ordersPending).length;
+if(pendingCount)h+=`<span style="padding:5px 0;font-size:11px;color:#a78bfa">⏳ Очікується: <strong>${pendingCount}</strong></span>`;
+h+='</div>';
+
 const totalItems=data.supplierOrders.reduce((s,g)=>s+g.items.length,0);
 const activeItems=ordersBudgetEnabled?totalItems-budgetSkipped.size:totalItems;
 const totalCost=data.supplierOrders.reduce((s,g)=>{return s+g.items.filter(it=>!ordersBudgetEnabled||!budgetSkipped.has(it.drugName)).reduce((ss,it)=>ss+(it.costEstimate||0),0)},0);
@@ -1933,6 +2087,18 @@ h+=`<div class="stat-card"><div class="stat-num" style="color:var(--accent)">${d
 h+=`<div class="stat-card"><div class="stat-num" style="color:var(--warn)">${activeItems}</div><div class="stat-lbl">Позицій</div></div>`;
 h+=`<div class="stat-card"><div class="stat-num" style="color:var(--green);font-size:13px">${fmt(Math.round(totalCost))}</div><div class="stat-lbl">Сума, грн</div></div>`;
 h+='</div>';
+
+// Filters row
+h+='<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11px">';
+h+='<span style="color:var(--muted);padding:4px 2px">Фільтр:</span>';
+const venOpts=[["all","Усі VEN"],["V","Тільки V"],["E","Тільки E"],["N","Тільки N"]];
+const venClr={all:"",V:"color:#22c55e;border-color:#22c55e",E:"color:#fbbf24;border-color:#fbbf24",N:"color:#ef4444;border-color:#ef4444"};
+for(const[k,l]of venOpts)h+=`<button class="sort-btn${ordersVenFilter===k?" active":""}" style="${ordersVenFilter===k?venClr[k]||"":""}" onclick="ordersVenFilter='${k}';render()">${l}</button>`;
+const abcOpts=[["all","Усі ABC"],["A","A"],["B","B"],["C","C"]];
+for(const[k,l]of abcOpts)h+=`<button class="sort-btn${ordersAbcFilter===k?" active":""}" onclick="ordersAbcFilter='${k}';render()">${l}</button>`;
+h+=`<button class="sort-btn${ordersHidePending?" active":""}" onclick="ordersHidePending=!ordersHidePending;render()" style="${ordersHidePending?"color:#c4b5fd;border-color:#8b5cf6":""}">${ordersHidePending?"⏳ Очікувані сховано":"⏳ Показати очікувані"}</button>`;
+h+='</div>';
+
 
 // Warnings for items without matches
 const warnBits=[];
@@ -1967,28 +2133,37 @@ groups=groups.map(g=>({...g,items:g.items.filter(it=>{const hay=(g.name+" "+it.d
 
 // Render each supplier as expandable card
 window._ordersGroups=groups;
+// Unified visibility predicate for each item
+function _orderVisible(it,gName){
+  if(ordersBudgetEnabled&&budgetSkipped.has(it.drugName))return false;
+  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return false;
+  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return false;
+  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return false;
+  return true;
+}
 for(let gi=0;gi<groups.length;gi++){
 const g=groups[gi];
 const isExp=ordersExpandedSupplier===g.name;
-// Filter items by budget
-const visibleItems=g.items.filter(it=>!ordersBudgetEnabled||!budgetSkipped.has(it.drugName));
+// Filter items by combined predicate
+const visibleItems=g.items.filter(it=>_orderVisible(it,g.name));
 const visibleCost=visibleItems.reduce((s,it)=>s+(it.costEstimate||0),0);
 const skippedHere=g.items.length-visibleItems.length;
-if(ordersBudgetEnabled&&visibleItems.length===0)continue; // whole supplier out of budget
+if(visibleItems.length===0)continue; // whole supplier filtered out
 // Group items by contract
 const byContract={};
 for(let ii=0;ii<g.items.length;ii++){
   const it=g.items[ii];
+  if(!_orderVisible(it,g.name))continue;
   const c=it.contract||"(без угоди)";
   if(!byContract[c])byContract[c]={items:[],total:0,origIdx:[]};
   byContract[c].items.push(it);
   byContract[c].origIdx.push(ii);
-  if(!ordersBudgetEnabled||!budgetSkipped.has(it.drugName))byContract[c].total+=(it.costEstimate||0);
+  byContract[c].total+=(it.costEstimate||0);
 }
 const contractNames=Object.keys(byContract);
 h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${gi})">`;
 h+=`<div class="agr-sup">📝 ${hlPlain(g.name,q)}</div>`;
-h+=`<div class="agr-meta"><span>Позицій: <strong>${visibleItems.length}${skippedHere?` <span style="color:var(--warn)">(+${skippedHere} поза бюджетом)</span>`:""}</strong></span><span>Сума: <strong>${fmt(Math.round(visibleCost))} грн</strong></span>`;
+h+=`<div class="agr-meta"><span>Позицій: <strong>${visibleItems.length}${skippedHere?` <span style="color:var(--muted)">(+${skippedHere} приховано)</span>`:""}</strong></span><span>Сума: <strong>${fmt(Math.round(visibleCost))} грн</strong></span>`;
 if(contractNames.length>1)h+=`<span>Угод: <strong>${contractNames.length}</strong></span>`;
 h+='</div>';
 h+='<div class="agr-detail" onclick="event.stopPropagation()">';
@@ -2009,13 +2184,14 @@ for(const cName of contractNames){
     const it=bucket.items[bIdx];
     const ii=bucket.origIdx[bIdx];
     const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
-    const outOfBudget=ordersBudgetEnabled&&budgetSkipped.has(it.drugName);
-    h+=`<div class="agr-item" style="padding-bottom:10px;${outOfBudget?'opacity:.4':''}">`;
+    h+=`<div class="agr-item" style="padding-bottom:10px">`;
     // Title row with VEN badge
     h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
-    h+=`<span style="cursor:pointer" onclick="openVenPopup(${gi},${ii})" title="Клацни для зміни категорії">${venBadge(it.ven)}</span>`;
-    if(it.emlCandidate)h+='<span style="font-size:10px;color:#f87171;background:rgba(239,68,68,.1);padding:1px 5px;border-radius:4px" title="Цей препарат у WHO EML (Essential Medicines List) — можливо, варто позначити V">⚡WHO EML</span>';
-    if(outOfBudget)h+='<span style="font-size:10px;color:var(--warn);background:rgba(245,158,11,.1);padding:1px 5px;border-radius:4px">поза бюджетом</span>';
+    h+=`<span style="cursor:pointer" onclick="openVenPopup(${gi},${ii})" title="Клацни для зміни VEN категорії (ABC автоматично)">${comboBadge(it.drugName,it.mnn)}</span>`;
+    if(it.manual)h+='<span style="font-size:10px;color:#60a5fa;background:rgba(59,130,246,.15);padding:1px 5px;border-radius:4px" title="Додано вручну">✋ вручну</span>';
+    const _pKey=it.drugName+"|"+g.name;
+    if(ordersPending[_pKey])h+='<span style="font-size:10px;color:#c4b5fd;background:rgba(139,92,246,.15);padding:1px 5px;border-radius:4px" title="Вже замовлено, очікується доставка">⏳ очікується</span>';
+    if(it.emlCandidate)h+='<span style="font-size:10px;color:#86efac;background:rgba(34,197,94,.12);padding:1px 5px;border-radius:4px" title="Цей препарат у WHO EML (Essential Medicines List) — можливо, варто позначити V">⚡WHO EML</span>';
     h+=`<span class="name" style="flex:1">${hlPlain(it.drugName,q)}</span>`;
     h+='</div>';
     if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
@@ -2054,7 +2230,25 @@ for(const cName of contractNames){
       }
       h+='</div>';
     }
-    h+=`<div style="margin-top:6px"><button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItemByIdx(${gi},${ii})">✕ Прибрати з замовлення</button></div>`;
+    // Pending + actions row
+    const pKey=it.drugName+"|"+g.name;
+    const isPending=!!ordersPending[pKey];
+    h+='<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    h+=`<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;padding:4px 8px;border-radius:6px;background:${isPending?"rgba(139,92,246,.18)":"rgba(255,255,255,.04)"};border:1px solid ${isPending?"#8b5cf6":"rgba(255,255,255,.1)"};color:${isPending?"#c4b5fd":"var(--muted)"}">`;
+    h+=`<input type="checkbox" ${isPending?"checked":""} onchange="togglePending(${gi},${ii},this.checked)" onclick="event.stopPropagation()" style="accent-color:#8b5cf6">`;
+    h+=isPending?"⏳ Замовлено, очікується":"⏳ Позначити як очікується";
+    h+='</label>';
+    if(it.manual){
+      h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger)" onclick="removeManual(${JSON.stringify(it.manualId).replace(/"/g,'&quot;')})">🗑 Видалити вручну</button>`;
+    }else{
+      h+=`<button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItemByIdx(${gi},${ii})">✕ Прибрати з замовлення</button>`;
+    }
+    h+='</div>';
+    if(isPending){
+      const ts=ordersPending[pKey].ts;
+      const d=ts?new Date(ts):null;
+      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(139,92,246,.08);border-left:3px solid #8b5cf6;border-radius:4px;font-size:10px;color:#c4b5fd">✓ Замовлено${d?" "+d.toLocaleDateString("uk-UA"):""}</div>`;
+    }
     h+='</div>';
   }
   if(showGrouping){
@@ -2077,35 +2271,206 @@ h+=`<div style="padding:3px 0;font-size:11px">• ${esc(excludedList[ei])} <butt
 h+='</div></details>';
 }
 
-// VEN popup overlay
-if(venPopupFor){
-const mnn=(function(){
-  for(const g of (window._ordersGroups||[])){
-    for(const it of g.items){if(it.drugName===venPopupFor)return it.mnn||""}
+el.innerHTML=h;
+}
+
+function openAddDialog(){
+  if(event)event.stopPropagation();
+  ordersAddDialog=true;
+  ordersAddQuery="";
+  ordersAddPicked=null;
+  ordersAddPacks=1;
+  render();
+}
+function closeAddDialog(){
+  ordersAddDialog=false;
+  ordersAddPicked=null;
+  render();
+}
+function onAddSearchInput(v){
+  ordersAddQuery=v;
+  // Lightweight: update only the results list without full render
+  const list=document.getElementById("add-results-list");
+  if(list)list.innerHTML=_renderAddResults();
+}
+function pickAddTender(idx){
+  if(event)event.stopPropagation();
+  const list=window._addSearchResults||[];
+  const t=list[idx];
+  if(!t)return;
+  ordersAddPicked=t;
+  ordersAddPacks=1;
+  render();
+}
+function unpickAddTender(){
+  if(event)event.stopPropagation();
+  ordersAddPicked=null;
+  render();
+}
+function setAddPacks(v){
+  ordersAddPacks=Math.max(0,parseInt(v)||0);
+  // Update subtotal live
+  const sub=document.getElementById("add-subtotal");
+  if(sub&&ordersAddPicked&&ordersAddPicked.price!=null){
+    sub.textContent=fmt(Math.round(ordersAddPacks*ordersAddPicked.price))+" грн";
   }
-  return"";
-})();
+}
+function confirmAdd(){
+  if(!ordersAddPicked)return;
+  const t=ordersAddPicked;
+  const packs=Math.max(1,ordersAddPacks|0);
+  const id="m_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  ordersManual.push({
+    id,
+    drugName:t.commercial,
+    commercial:t.commercial,
+    mnn:t.mnn||"",
+    supplier:t.supplier,
+    contract:t.contract||"",
+    packUnit:t.unit||"уп",
+    pk:1,
+    packsToOrder:packs,
+    pricePerPack:t.price!=null?t.price:null,
+  });
+  saveManual();
+  closeAddDialog();
+}
+function removeManual(id){
+  if(event)event.stopPropagation();
+  ordersManual=ordersManual.filter(m=>m.id!==id);
+  saveManual();
+  render();
+}
+function setManualPacks(id,v){
+  const m=ordersManual.find(x=>x.id===id);
+  if(!m)return;
+  m.packsToOrder=Math.max(0,parseInt(v)||0);
+  saveManual();
+  render();
+}
+function togglePending(gi,ii,checked){
+  if(event)event.stopPropagation();
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const it=g.items[ii];if(!it)return;
+  const key=it.drugName+"|"+g.name;
+  if(checked){
+    ordersPending[key]={ts:new Date().toISOString(),drugName:it.drugName,supplier:g.name};
+  }else{
+    delete ordersPending[key];
+  }
+  savePending();render();
+}
+function _renderAddResults(){
+  const q=(ordersAddQuery||"").trim().toLowerCase();
+  if(!allTenders||!allTenders.length)return'<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Дані тендерів ще завантажуються...</div>';
+  let list=allTenders;
+  if(q.length>=2){
+    const w=q.split(/\s+/).filter(Boolean);
+    list=list.filter(t=>{
+      const hay=((t.commercial||"")+" "+(t.mnn||"")+" "+(t.supplier||"")).toLowerCase();
+      return w.every(x=>hay.includes(x));
+    });
+  }else if(!q){
+    // show nothing until user types — list is huge
+    return'<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Почни вводити назву, постачальника або МНН...</div>';
+  }
+  list=list.slice(0,40);
+  window._addSearchResults=list;
+  if(!list.length)return'<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Нічого не знайдено</div>';
+  let h="";
+  for(let i=0;i<list.length;i++){
+    const t=list[i];
+    h+=`<div onclick="pickAddTender(${i})" style="padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;transition:background .1s" onmouseover="this.style.background='rgba(59,130,246,.08)'" onmouseout="this.style.background=''">`;
+    h+=`<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px">${esc((t.commercial||"").slice(0,90))}</div>`;
+    h+=`<div style="font-size:10px;color:var(--muted)">`;
+    if(t.mnn)h+=`МНН: ${esc((t.mnn||"").slice(0,60))} · `;
+    h+=`<strong style="color:var(--accent)">${esc(t.supplier)}</strong>`;
+    if(t.contract)h+=` · ${esc((t.contract||"").slice(0,40))}`;
+    h+='</div>';
+    h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">К-сть по угоді: ${fmt(t.qty)} ${esc(t.unit||"")}${t.price!=null?` · Ціна: ${fmt(t.price)} грн`:""}</div>`;
+    h+='</div>';
+  }
+  return h;
+}
+function buildAddDialog(){
+  let h="";
+  h+='<div onclick="closeAddDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:110;display:flex;align-items:center;justify-content:center;padding:8px">';
+  h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:560px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+  h+='<div style="font-size:15px;font-weight:700;margin-bottom:4px">Додати позицію вручну</div>';
+  if(!ordersAddPicked){
+    h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Шукай серед тендерних угод:</div>';
+    h+=`<input id="add-search-input" value="${esc(ordersAddQuery)}" placeholder="Назва, постачальник, МНН..." oninput="onAddSearchInput(this.value)" style="width:100%;background:rgba(255,255,255,.08);border:1.5px solid rgba(59,130,246,.3);border-radius:10px;padding:10px 12px;color:#fff;font-size:14px;outline:none;margin-bottom:8px">`;
+    h+='<div id="add-results-list" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;background:rgba(20,24,30,.5);min-height:200px;max-height:50vh">';
+    h+=_renderAddResults();
+    h+='</div>';
+    h+='<button class="sort-btn" style="width:100%;padding:8px;font-size:12px;margin-top:8px" onclick="closeAddDialog()">Скасувати</button>';
+  }else{
+    const t=ordersAddPicked;
+    h+=`<div style="padding:10px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:10px;margin-bottom:10px">`;
+    h+=`<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">${esc((t.commercial||"").slice(0,100))}</div>`;
+    if(t.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:3px">МНН: ${esc((t.mnn||"").slice(0,80))}</div>`;
+    h+=`<div style="font-size:11px;color:var(--accent);margin-bottom:2px"><strong>${esc(t.supplier)}</strong></div>`;
+    if(t.contract)h+=`<div style="font-size:10px;color:var(--muted)">${esc((t.contract||"").slice(0,90))}</div>`;
+    h+=`<div style="font-size:10px;color:var(--muted);margin-top:4px">К-сть по угоді: ${fmt(t.qty)} ${esc(t.unit||"")}${t.price!=null?` · Ціна: ${fmt(t.price)} грн/${esc(t.unit||"уп")}`:""}</div>`;
+    h+=`</div>`;
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">';
+    h+=`<label style="font-size:12px;flex:1">Кількість, ${esc(t.unit||"уп")}:</label>`;
+    h+=`<input type="number" min="1" step="1" value="${ordersAddPacks}" onchange="setAddPacks(this.value)" oninput="setAddPacks(this.value)" style="width:100px;background:rgba(255,255,255,.08);border:1px solid var(--accent);border-radius:8px;padding:6px 10px;color:#fff;font-size:14px;text-align:right;outline:none">`;
+    h+='</div>';
+    if(t.price!=null){
+      h+=`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Сума: <strong id="add-subtotal" style="color:var(--green);font-size:14px">${fmt(Math.round(ordersAddPacks*t.price))} грн</strong></div>`;
+    }
+    h+='<div style="display:flex;gap:6px">';
+    h+='<button class="sort-btn" style="flex:1;padding:10px;font-size:13px" onclick="unpickAddTender()">← Вибрати інше</button>';
+    h+='<button style="flex:1;padding:10px;font-size:13px;background:var(--accent);color:#0d1117;border:none;border-radius:8px;font-weight:700;cursor:pointer" onclick="confirmAdd()">✓ Додати</button>';
+    h+='</div>';
+  }
+  h+='</div></div>';
+  return h;
+}
+function buildVenPopup(){
+if(!venPopupFor)return"";
+let h="";
+// Try to find mnn: from orders first, then fallback
+let mnn="";
+for(const g of (window._ordersGroups||[])){
+  for(const it of g.items){if(it.drugName===venPopupFor){mnn=it.mnn||"";break}}
+  if(mnn)break;
+}
+if(!mnn)mnn=mnnForDrug(venPopupFor);
 const isInEml=mnnInWHO_EML(mnn);
-const currentCat=getVen(venPopupFor);
+const currentVen=getVen(venPopupFor,mnn);
+const abc=getAbc(venPopupFor);
+const hasUserOverride=!!venCategories[venPopupFor];
 h+='<div onclick="closeVenPopup()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px">';
-h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:440px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:440px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.5);max-height:90vh;overflow-y:auto">';
 h+='<div style="font-size:15px;font-weight:700;margin-bottom:4px">Категорія препарату</div>';
 h+=`<div style="font-size:12px;color:var(--accent);margin-bottom:4px">${esc(venPopupFor)}</div>`;
 if(mnn)h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-bottom:10px">МНН: ${esc(mnn)}</div>`;
-if(isInEml)h+='<div style="padding:8px 10px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:6px;font-size:11px;color:#fca5a5;margin-bottom:10px">⚡ Цей МНН є у WHO Model List of Essential Medicines — варто розглянути як <strong>V</strong> (життєво важливий).</div>';
+// ABC section
+h+='<div style="padding:8px 10px;background:rgba(14,165,233,.1);border-left:3px solid #0ea5e9;border-radius:6px;font-size:11px;color:#7dd3fc;margin-bottom:10px">';
+h+='<div style="font-weight:700;margin-bottom:3px">ABC-аналіз (автоматично)</div>';
+if(abc){
+  const labels={A:"A — 80% бюджету (найбільш затратні)",B:"B — наступні 15%",C:"C — решта 5%"};
+  h+=`Категорія: <strong>${abc}</strong> — ${labels[abc]}`;
+}else{
+  h+='<span style="color:var(--muted)">Немає даних про витрати на цей препарат</span>';
+}
+h+='</div>';
+// VEN section
+if(isInEml&&!hasUserOverride)h+='<div style="padding:8px 10px;background:rgba(34,197,94,.1);border-left:3px solid var(--green);border-radius:6px;font-size:11px;color:#86efac;margin-bottom:10px">⚡ Цей МНН є у WHO Model List of Essential Medicines — автоматично виставлено <strong>V</strong>. Ти можеш змінити.</div>';
 h+='<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px"><strong>V</strong> — vital (життєво важливі, без них є ризик для пацієнта).<br><strong>E</strong> — essential (необхідні для базової допомоги).<br><strong>N</strong> — non-essential (можна замінити).</div>';
 h+='<div style="display:flex;gap:6px;margin-bottom:8px">';
 ["V","E","N"].forEach(c=>{
-  const active=(c===currentCat);
-  const colors={V:"#ef4444",E:"#fbbf24",N:"#94a3b8"};
+  const active=(c===currentVen);
+  const colors={V:"#22c55e",E:"#fbbf24",N:"#ef4444"};
   h+=`<button onclick="chooseVen('${c}')" style="flex:1;padding:10px;border-radius:10px;border:2px solid ${active?colors[c]:"rgba(255,255,255,.15)"};background:${active?colors[c]+"22":"rgba(255,255,255,.04)"};color:${active?colors[c]:"#cbd5e1"};font-size:14px;font-weight:700;cursor:pointer">${c}</button>`;
 });
 h+='</div>';
+if(hasUserOverride)h+='<button class="sort-btn" style="width:100%;padding:6px;font-size:11px;margin-bottom:6px" onclick="resetVen()">↺ Скинути до автоматичної</button>';
 h+='<button class="sort-btn" style="width:100%;padding:8px;font-size:12px" onclick="closeVenPopup()">Закрити</button>';
 h+='</div></div>';
-}
-
-el.innerHTML=h;
+return h;
 }
 
 function openVenPopup(gi,ii){
@@ -2113,10 +2478,20 @@ const g=(window._ordersGroups||[])[gi];if(!g)return;
 const it=g.items[ii];if(!it)return;
 venPopupFor=it.drugName;render();
 }
+function openVenPopupMonitor(drugName){
+venPopupFor=drugName;
+render();
+}
 function closeVenPopup(){venPopupFor=null;render()}
 function chooseVen(cat){
 if(!venPopupFor)return;
 setVen(venPopupFor,cat);
+venPopupFor=null;render();
+}
+function resetVen(){
+if(!venPopupFor)return;
+delete venCategories[venPopupFor];
+try{localStorage.setItem(CACHE_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
 venPopupFor=null;render();
 }
 function toggleBudget(checked){
@@ -2136,13 +2511,13 @@ const it=g.items[ii];if(!it)return;
 const n=Math.max(0,parseInt(v)||0);
 if(n===it.autoPacks)delete ordersQtyOverride[it.drugName];
 else ordersQtyOverride[it.drugName]=n;
-render();
+saveQtyOverride();render();
 }
 function resetOrderQty(gi,ii){
 const g=(window._ordersGroups||[])[gi];if(!g)return;
 const it=g.items[ii];if(!it)return;
 delete ordersQtyOverride[it.drugName];
-render();
+saveQtyOverride();render();
 }
 // Export/import VEN as CSV
 function exportVEN(){
