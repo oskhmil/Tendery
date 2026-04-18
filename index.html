@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v34";
+const CACHE_KEY = "tendertrack_v35";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -297,6 +297,494 @@ let ordersSupplierChoice={};           // {drugName: "supplierName"}
 let ordersExcluded={};                 // {drugName: true} — exclude from orders
 let ordersSearch="";
 let ordersExpandedSupplier=null;
+
+// WHO Model List of Essential Medicines, 23rd edition (2023) — основні МНН
+// Мета: запропонувати кандидатів на категорію V (життєво важливі).
+// Це ЛИШЕ підказка — остаточна класифікація за користувачем.
+// Формат: ["англ МНН", "український МНН"] — обидві форми для пошуку збігу.
+
+const WHO_EML = [
+  // Anaesthetics, preoperative medicines, medical gases
+  ["Bupivacaine", "Бупівакаїн"],
+  ["Halothane", "Галотан"],
+  ["Isoflurane", "Ізофлуран"],
+  ["Ketamine", "Кетамін"],
+  ["Lidocaine", "Лідокаїн"],
+  ["Nitrous oxide", "Азоту закис"],
+  ["Oxygen", "Кисень"],
+  ["Propofol", "Пропофол"],
+  ["Sevoflurane", "Севофлуран"],
+  ["Thiopental", "Тіопентал"],
+  ["Atropine", "Атропін"],
+  ["Midazolam", "Мідазолам"],
+  ["Morphine", "Морфін"],
+
+  // Analgesics, antipyretics, NSAID
+  ["Acetylsalicylic acid", "Ацетилсаліцилова кислота"],
+  ["Aspirin", "Аспірин"],
+  ["Ibuprofen", "Ібупрофен"],
+  ["Paracetamol", "Парацетамол"],
+  ["Acetaminophen", "Ацетамінофен"],
+  ["Codeine", "Кодеїн"],
+  ["Fentanyl", "Фентаніл"],
+  ["Hydromorphone", "Гідроморфон"],
+  ["Methadone", "Метадон"],
+  ["Oxycodone", "Оксикодон"],
+  ["Allopurinol", "Алопуринол"],
+  ["Azathioprine", "Азатіоприн"],
+  ["Methotrexate", "Метотрексат"],
+  ["Dexamethasone", "Дексаметазон"],
+  ["Hydrocortisone", "Гідрокортизон"],
+  ["Prednisolone", "Преднізолон"],
+  ["Prednisone", "Преднізон"],
+  ["Ondansetron", "Ондансетрон"],
+
+  // Antiallergics, anaphylaxis
+  ["Chlorphenamine", "Хлорфенамін"],
+  ["Epinephrine", "Епінефрин"],
+  ["Adrenaline", "Адреналін"],
+  ["Loratadine", "Лоратадин"],
+  ["Cetirizine", "Цетиризин"],
+
+  // Antidotes
+  ["Acetylcysteine", "Ацетилцистеїн"],
+  ["Calcium gluconate", "Кальцію глюконат"],
+  ["Methylthioninium chloride", "Метилтіонінію хлорид"],
+  ["Methylene blue", "Метиленовий синій"],
+  ["Naloxone", "Налоксон"],
+  ["Penicillamine", "Пеніциламін"],
+  ["Sodium nitrite", "Натрію нітрит"],
+  ["Sodium thiosulfate", "Натрію тіосульфат"],
+  ["Flumazenil", "Флумазеніл"],
+  ["Deferoxamine", "Дефероксамін"],
+
+  // Anticonvulsants / antiepileptics
+  ["Carbamazepine", "Карбамазепін"],
+  ["Diazepam", "Діазепам"],
+  ["Lamotrigine", "Ламотриджин"],
+  ["Levetiracetam", "Леветирацетам"],
+  ["Lorazepam", "Лоразепам"],
+  ["Magnesium sulfate", "Магнію сульфат"],
+  ["Phenobarbital", "Фенобарбітал"],
+  ["Phenytoin", "Фенітоїн"],
+  ["Valproic acid", "Вальпроєва кислота"],
+  ["Sodium valproate", "Натрію вальпроат"],
+  ["Ethosuximide", "Етосуксимід"],
+
+  // Anti-infective (antibacterials Access+Watch+Reserve)
+  ["Amikacin", "Амікацин"],
+  ["Amoxicillin", "Амоксицилін"],
+  ["Clavulanic acid", "Клавуланова кислота"],
+  ["Ampicillin", "Ампіцилін"],
+  ["Benzathine benzylpenicillin", "Бензатину бензилпеніцилін"],
+  ["Benzylpenicillin", "Бензилпеніцилін"],
+  ["Cefalexin", "Цефалексин"],
+  ["Cefazolin", "Цефазолін"],
+  ["Cefotaxime", "Цефотаксим"],
+  ["Ceftriaxone", "Цефтріаксон"],
+  ["Cefuroxime", "Цефуроксим"],
+  ["Cefixime", "Цефіксим"],
+  ["Ceftazidime", "Цефтазидим"],
+  ["Chloramphenicol", "Хлорамфенікол"],
+  ["Ciprofloxacin", "Ципрофлоксацин"],
+  ["Clarithromycin", "Кларитроміцин"],
+  ["Clindamycin", "Кліндаміцин"],
+  ["Cloxacillin", "Клоксацилін"],
+  ["Doxycycline", "Доксициклін"],
+  ["Erythromycin", "Еритроміцин"],
+  ["Gentamicin", "Гентаміцин"],
+  ["Metronidazole", "Метронідазол"],
+  ["Nitrofurantoin", "Нітрофурантоїн"],
+  ["Phenoxymethylpenicillin", "Феноксиметилпеніцилін"],
+  ["Piperacillin", "Піперацилін"],
+  ["Tazobactam", "Тазобактам"],
+  ["Procaine benzylpenicillin", "Прокаїну бензилпеніцилін"],
+  ["Spectinomycin", "Спектиноміцин"],
+  ["Sulfamethoxazole", "Сульфаметоксазол"],
+  ["Trimethoprim", "Триметоприм"],
+  ["Azithromycin", "Азитроміцин"],
+  ["Vancomycin", "Ванкоміцин"],
+  ["Meropenem", "Меропенем"],
+  ["Imipenem", "Іміпенем"],
+  ["Cilastatin", "Циластатин"],
+  ["Linezolid", "Лінезолід"],
+  ["Levofloxacin", "Левофлоксацин"],
+  ["Moxifloxacin", "Моксифлоксацин"],
+  ["Colistin", "Колістин"],
+  ["Polymyxin B", "Поліміксин B"],
+  ["Aztreonam", "Азтреонам"],
+  ["Fosfomycin", "Фосфоміцин"],
+
+  // Antituberculosis
+  ["Isoniazid", "Ізоніазид"],
+  ["Rifampicin", "Рифампіцин"],
+  ["Pyrazinamide", "Піразинамід"],
+  ["Ethambutol", "Етамбутол"],
+  ["Streptomycin", "Стрептоміцин"],
+  ["Bedaquiline", "Бедаквілін"],
+  ["Clofazimine", "Клофазимін"],
+  ["Cycloserine", "Циклосерин"],
+  ["Delamanid", "Деламанід"],
+  ["Ethionamide", "Етіонамід"],
+  ["Rifabutin", "Рифабутин"],
+  ["Rifapentine", "Рифапентин"],
+
+  // Antifungals
+  ["Amphotericin B", "Амфотерицин B"],
+  ["Clotrimazole", "Клотримазол"],
+  ["Fluconazole", "Флуконазол"],
+  ["Flucytosine", "Флуцитозин"],
+  ["Griseofulvin", "Гризеофульвін"],
+  ["Itraconazole", "Ітраконазол"],
+  ["Nystatin", "Ністатин"],
+  ["Voriconazole", "Вориконазол"],
+  ["Caspofungin", "Каспофунгін"],
+  ["Anidulafungin", "Анідулафунгін"],
+  ["Micafungin", "Мікафунгін"],
+
+  // Antivirals
+  ["Aciclovir", "Ацикловір"],
+  ["Acyclovir", "Ацикловір"],
+  ["Valaciclovir", "Валацикловір"],
+  ["Oseltamivir", "Осельтамівір"],
+  ["Abacavir", "Абакавір"],
+  ["Lamivudine", "Ламівудин"],
+  ["Zidovudine", "Зидовудин"],
+  ["Tenofovir", "Тенофовір"],
+  ["Emtricitabine", "Емтрицитабін"],
+  ["Efavirenz", "Ефавіренз"],
+  ["Dolutegravir", "Долутегравір"],
+  ["Darunavir", "Дарунавір"],
+  ["Ritonavir", "Ритонавір"],
+  ["Sofosbuvir", "Софосбувір"],
+  ["Daclatasvir", "Даклатасвір"],
+  ["Ribavirin", "Рибавірин"],
+  ["Ganciclovir", "Ганцикловір"],
+  ["Remdesivir", "Ремдесивір"],
+
+  // Antimalarials
+  ["Artemether", "Артеметер"],
+  ["Lumefantrine", "Люмефантрин"],
+  ["Artesunate", "Артесунат"],
+  ["Chloroquine", "Хлорохін"],
+  ["Primaquine", "Примахін"],
+  ["Quinine", "Хінін"],
+
+  // Antineoplastics (cytotoxic — complementary)
+  ["Arsenic trioxide", "Миш'яку триоксид"],
+  ["Asparaginase", "Аспарагіназа"],
+  ["Bendamustine", "Бендамустин"],
+  ["Bleomycin", "Блеоміцин"],
+  ["Calcium folinate", "Кальцію фолінат"],
+  ["Leucovorin", "Лейковорин"],
+  ["Capecitabine", "Капецитабін"],
+  ["Carboplatin", "Карбоплатин"],
+  ["Chlorambucil", "Хлорамбуцил"],
+  ["Cisplatin", "Цисплатин"],
+  ["Cyclophosphamide", "Циклофосфамід"],
+  ["Cytarabine", "Цитарабін"],
+  ["Dacarbazine", "Дакарбазин"],
+  ["Dactinomycin", "Дактиноміцин"],
+  ["Daunorubicin", "Даунорубіцин"],
+  ["Docetaxel", "Доцетаксел"],
+  ["Doxorubicin", "Доксорубіцин"],
+  ["Etoposide", "Етопозид"],
+  ["Fludarabine", "Флударабін"],
+  ["Fluorouracil", "Фторурацил"],
+  ["Gemcitabine", "Гемцитабін"],
+  ["Hydroxycarbamide", "Гідроксикарбамід"],
+  ["Hydroxyurea", "Гідроксисечовина"],
+  ["Ifosfamide", "Іфосфамід"],
+  ["Irinotecan", "Іринотекан"],
+  ["Melphalan", "Мелфалан"],
+  ["Mercaptopurine", "Меркаптопурин"],
+  ["Oxaliplatin", "Оксаліплатин"],
+  ["Paclitaxel", "Паклітаксел"],
+  ["Pegaspargase", "Пегаспаргаза"],
+  ["Procarbazine", "Прокарбазин"],
+  ["Tioguanine", "Тіогуанін"],
+  ["Vinblastine", "Вінбластин"],
+  ["Vincristine", "Вінкристин"],
+  ["Vinorelbine", "Вінорельбін"],
+  ["Temozolomide", "Темозоломід"],
+  ["Abiraterone", "Абіратерон"],
+  ["Bicalutamide", "Бікалутамід"],
+  ["Imatinib", "Іматиніб"],
+  ["Rituximab", "Ритуксимаб"],
+  ["Trastuzumab", "Трастузумаб"],
+  ["Bevacizumab", "Бевацизумаб"],
+  ["Tamoxifen", "Тамоксифен"],
+  ["Letrozole", "Летрозол"],
+  ["Anastrozole", "Анастрозол"],
+  ["Filgrastim", "Філграстим"],
+  ["Erlotinib", "Ерлотиніб"],
+
+  // Antiparkinsonism
+  ["Biperiden", "Біперидин"],
+  ["Levodopa", "Леводопа"],
+  ["Carbidopa", "Карбідопа"],
+
+  // Blood medicines
+  ["Ferrous salt", "Заліза солі"],
+  ["Folic acid", "Фолієва кислота"],
+  ["Hydroxocobalamin", "Гідроксокобаламін"],
+  ["Dabigatran", "Дабігатран"],
+  ["Desmopressin", "Десмопресин"],
+  ["Enoxaparin", "Еноксапарин"],
+  ["Heparin", "Гепарин"],
+  ["Phytomenadione", "Фітоменадіон"],
+  ["Vitamin K", "Вітамін K"],
+  ["Protamine sulfate", "Протаміну сульфат"],
+  ["Tranexamic acid", "Транексамова кислота"],
+  ["Warfarin", "Варфарин"],
+  ["Deferasirox", "Деферазірокс"],
+  ["Carbetocin", "Карбетоцин"],
+  ["Aprotinin", "Апротинін"],
+  ["Epoetin", "Епоетин"],
+  ["Darbepoetin", "Дарбепоетин"],
+  ["Octreotide", "Октреотид"],
+  ["Somatostatin", "Соматостатин"],
+
+  // Blood products
+  ["Fresh frozen plasma", "Плазма свіжозаморожена"],
+  ["Platelets", "Тромбоцити"],
+  ["Whole blood", "Кров цільна"],
+  ["Albumin", "Альбумін"],
+  ["Immunoglobulin", "Імуноглобулін"],
+  ["Factor VIII", "Фактор VIII"],
+  ["Factor IX", "Фактор IX"],
+
+  // Cardiovascular
+  ["Bisoprolol", "Бісопролол"],
+  ["Metoprolol", "Метопролол"],
+  ["Atenolol", "Атенолол"],
+  ["Carvedilol", "Карведилол"],
+  ["Propranolol", "Пропранолол"],
+  ["Digoxin", "Дигоксин"],
+  ["Verapamil", "Верапаміл"],
+  ["Amiodarone", "Аміодарон"],
+  ["Amlodipine", "Амлодипін"],
+  ["Nifedipine", "Ніфедипін"],
+  ["Enalapril", "Еналаприл"],
+  ["Lisinopril", "Лізиноприл"],
+  ["Ramipril", "Раміприл"],
+  ["Perindopril", "Периндоприл"],
+  ["Hydralazine", "Гідралазин"],
+  ["Hydrochlorothiazide", "Гідрохлортіазид"],
+  ["Indapamide", "Індапамід"],
+  ["Furosemide", "Фуросемід"],
+  ["Spironolactone", "Спіронолактон"],
+  ["Losartan", "Лозартан"],
+  ["Valsartan", "Валсартан"],
+  ["Telmisartan", "Телмісартан"],
+  ["Methyldopa", "Метилдопа"],
+  ["Clopidogrel", "Клопідогрель"],
+  ["Atorvastatin", "Аторвастатин"],
+  ["Simvastatin", "Симвастатин"],
+  ["Rosuvastatin", "Розувастатин"],
+  ["Nitroglycerin", "Нітрогліцерин"],
+  ["Glyceryl trinitrate", "Гліцерилу тринітрат"],
+  ["Isosorbide dinitrate", "Ізосорбіду динітрат"],
+  ["Dopamine", "Дофамін"],
+  ["Dobutamine", "Добутамін"],
+  ["Norepinephrine", "Норепінефрин"],
+  ["Noradrenaline", "Норадреналін"],
+  ["Alteplase", "Альтеплаза"],
+  ["Streptokinase", "Стрептокіназа"],
+  ["Tenecteplase", "Тенектеплаза"],
+
+  // Dermatological
+  ["Benzoyl peroxide", "Бензоїлу пероксид"],
+  ["Salicylic acid", "Саліцилова кислота"],
+  ["Betamethasone", "Бетаметазон"],
+  ["Hydrocortisone", "Гідрокортизон"],
+  ["Permethrin", "Перметрин"],
+  ["Benzyl benzoate", "Бензилбензоат"],
+  ["Silver sulfadiazine", "Срібла сульфадіазин"],
+
+  // Diagnostic agents
+  ["Barium sulfate", "Барію сульфат"],
+  ["Iohexol", "Йогексол"],
+  ["Iopamidol", "Йопамідол"],
+
+  // Disinfectants
+  ["Chlorhexidine", "Хлоргексидин"],
+  ["Ethanol", "Етанол"],
+  ["Iodine", "Йод"],
+  ["Povidone iodine", "Повідон-йод"],
+  ["Hydrogen peroxide", "Перекис водню"],
+
+  // Diuretics (see cardiovascular)
+
+  // Gastrointestinal
+  ["Omeprazole", "Омепразол"],
+  ["Pantoprazole", "Пантопразол"],
+  ["Lansoprazole", "Лансопразол"],
+  ["Esomeprazole", "Езомепразол"],
+  ["Ranitidine", "Ранітидин"],
+  ["Famotidine", "Фамотидин"],
+  ["Ondansetron", "Ондансетрон"],
+  ["Metoclopramide", "Метоклопрамід"],
+  ["Oral rehydration salts", "Солі для пероральної регідратації"],
+  ["Zinc sulfate", "Цинку сульфат"],
+  ["Bisacodyl", "Бісакодил"],
+  ["Senna", "Сени"],
+  ["Lactulose", "Лактулоза"],
+  ["Loperamide", "Лоперамід"],
+  ["Mesalazine", "Мезалазин"],
+  ["Sulfasalazine", "Сульфасалазин"],
+  ["Pancreatin", "Панкреатин"],
+
+  // Hormones / endocrine
+  ["Insulin", "Інсулін"],
+  ["Metformin", "Метформін"],
+  ["Gliclazide", "Гліклазид"],
+  ["Glibenclamide", "Глібенкламід"],
+  ["Empagliflozin", "Емпагліфлозин"],
+  ["Dapagliflozin", "Дапагліфлозин"],
+  ["Glucagon", "Глюкагон"],
+  ["Glucose", "Глюкоза"],
+  ["Levothyroxine", "Левотироксин"],
+  ["Propylthiouracil", "Пропілтіоурацил"],
+  ["Methimazole", "Метимазол"],
+  ["Thiamazole", "Тіамазол"],
+  ["Calcitonin", "Кальцитонін"],
+  ["Alendronate", "Алендронат"],
+  ["Zoledronic acid", "Золедронова кислота"],
+  ["Fludrocortisone", "Флудрокортизон"],
+  ["Desmopressin", "Десмопресин"],
+  ["Leuprorelin", "Лейпрорелін"],
+
+  // Contraceptives and reproductive
+  ["Ethinylestradiol", "Етинілестрадіол"],
+  ["Levonorgestrel", "Левоноргестрел"],
+  ["Medroxyprogesterone", "Медроксипрогестерон"],
+  ["Misoprostol", "Мізопростол"],
+  ["Mifepristone", "Міфепристон"],
+  ["Oxytocin", "Окситоцин"],
+  ["Ergometrine", "Ергометрин"],
+  ["Nifedipine", "Ніфедипін"],
+  ["Atosiban", "Атосибан"],
+  ["Dinoprostone", "Динопростон"],
+
+  // Immunological / vaccines (major vaccine INNs)
+  ["BCG vaccine", "Вакцина БЦЖ"],
+  ["Cholera vaccine", "Вакцина від холери"],
+  ["Diphtheria vaccine", "Вакцина від дифтерії"],
+  ["Hepatitis A vaccine", "Вакцина від гепатиту А"],
+  ["Hepatitis B vaccine", "Вакцина від гепатиту B"],
+  ["HPV vaccine", "Вакцина HPV"],
+  ["Influenza vaccine", "Вакцина проти грипу"],
+  ["Measles vaccine", "Вакцина від кору"],
+  ["Pertussis vaccine", "Вакцина від кашлюку"],
+  ["Pneumococcal vaccine", "Вакцина пневмококова"],
+  ["Poliomyelitis vaccine", "Вакцина від поліомієліту"],
+  ["Rabies vaccine", "Вакцина антирабічна"],
+  ["Rotavirus vaccine", "Вакцина ротавірусна"],
+  ["Rubella vaccine", "Вакцина від краснухи"],
+  ["Tetanus vaccine", "Вакцина від правця"],
+  ["Tuberculin", "Туберкулін"],
+  ["Antirabies immunoglobulin", "Імуноглобулін антирабічний"],
+  ["Diphtheria antitoxin", "Антитоксин дифтерійний"],
+  ["Antivenom", "Сироватка проти отрут"],
+
+  // Muscle relaxants (peripheral)
+  ["Suxamethonium", "Суксаметоній"],
+  ["Rocuronium", "Рокуроній"],
+  ["Atracurium", "Атракурій"],
+  ["Vecuronium", "Векуроній"],
+  ["Neostigmine", "Неостигмін"],
+
+  // Ophthalmological
+  ["Timolol", "Тимолол"],
+  ["Latanoprost", "Латанопрост"],
+  ["Pilocarpine", "Пілокарпін"],
+  ["Acetazolamide", "Ацетазоламід"],
+  ["Mannitol", "Маніт"],
+  ["Ciprofloxacin eye drops", "Ципрофлоксацин очні"],
+  ["Gentamicin eye", "Гентаміцин очний"],
+  ["Tetracycline eye", "Тетрациклін очний"],
+
+  // Psychotherapeutic (psychotropics)
+  ["Amitriptyline", "Амітриптилін"],
+  ["Fluoxetine", "Флуоксетин"],
+  ["Sertraline", "Сертралін"],
+  ["Citalopram", "Циталопрам"],
+  ["Escitalopram", "Есциталопрам"],
+  ["Paroxetine", "Пароксетин"],
+  ["Haloperidol", "Галоперидол"],
+  ["Chlorpromazine", "Хлорпромазин"],
+  ["Olanzapine", "Оланзапін"],
+  ["Risperidone", "Рисперидон"],
+  ["Quetiapine", "Кветіапін"],
+  ["Aripiprazole", "Арипіпразол"],
+  ["Clozapine", "Клозапін"],
+  ["Lithium carbonate", "Літію карбонат"],
+  ["Bupropion", "Бупропіон"],
+  ["Nicotine replacement", "Нікотинзамісна терапія"],
+  ["Methadone", "Метадон"],
+  ["Buprenorphine", "Бупренорфін"],
+  ["Naltrexone", "Налтрексон"],
+
+  // Respiratory
+  ["Salbutamol", "Сальбутамол"],
+  ["Albuterol", "Альбутерол"],
+  ["Beclometasone", "Беклометазон"],
+  ["Budesonide", "Будесонід"],
+  ["Fluticasone", "Флутиказон"],
+  ["Ipratropium", "Іпратропій"],
+  ["Tiotropium", "Тіотропій"],
+  ["Formoterol", "Формотерол"],
+  ["Salmeterol", "Сальметерол"],
+  ["Theophylline", "Теофілін"],
+  ["Montelukast", "Монтелукаст"],
+  ["Ambroxol", "Амброксол"],
+  ["Acetylcysteine", "Ацетилцистеїн"],
+
+  // Solutions for parenteral use (fluids)
+  ["Sodium chloride", "Натрію хлорид"],
+  ["Potassium chloride", "Калію хлорид"],
+  ["Sodium hydrogen carbonate", "Натрію гідрокарбонат"],
+  ["Ringer lactate", "Рінгера лактат"],
+  ["Ringer", "Рінгер"],
+
+  // Vitamins and minerals
+  ["Ascorbic acid", "Аскорбінова кислота"],
+  ["Calcium", "Кальцій"],
+  ["Cholecalciferol", "Холекальциферол"],
+  ["Ergocalciferol", "Ергокальциферол"],
+  ["Vitamin D", "Вітамін D"],
+  ["Nicotinamide", "Нікотинамід"],
+  ["Pyridoxine", "Піридоксин"],
+  ["Retinol", "Ретинол"],
+  ["Vitamin A", "Вітамін A"],
+  ["Riboflavin", "Рибофлавін"],
+  ["Thiamine", "Тіамін"],
+  ["Magnesium", "Магній"],
+  ["Potassium", "Калій"],
+
+  // Ear, nose, throat
+  ["Xylometazoline", "Ксилометазолін"],
+  ["Oxymetazoline", "Оксиметазолін"],
+
+  // Specific to peritoneal dialysis / renal
+  ["Sevelamer", "Севеламер"],
+  ["Calcium carbonate", "Кальцію карбонат"],
+  ["Cinacalcet", "Цинакальцет"],
+
+  // Others / commonly used critical care items
+  ["Mannitol", "Маніт"],
+  ["Activated charcoal", "Вугілля активоване"],
+];
+
+// VEN (Vital / Essential / Non-essential) — user-confirmed classification per drug.
+// Key: drug name (as seen in Замовлення / monitor data). Value: "V" | "E" | "N".
+// Drugs not in dict default to "E".
+let venCategories={};             // {drugName: "V"|"E"|"N"}
+let venPopupFor=null;              // drug name for which VEN popup is open
+let ordersBudgetEnabled=false;     // limited budget mode
+let ordersBudget=0;                // UAH
+let ordersQtyOverride={};          // {drugName: packsToOrder} — user-edited qty
 
 function toggleFilter(k){
 if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
@@ -1241,6 +1729,56 @@ const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement
 function fmtDate(d){if(!d)return"—";return d.toLocaleDateString("uk-UA",{day:"2-digit",month:"2-digit",year:"numeric"})}
 function hlPlain(text,q){if(!q)return esc(text);const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return esc(text);const re=new RegExp("("+words.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");return esc(text).replace(re,"<mark>$1</mark>")}
 
+// ═══════ VEN helpers ═══════
+// Normalize МНН for fuzzy match: lowercase, strip commas/dots, drop dosage forms and units
+function normalizeMNN(s){
+  if(!s)return"";
+  let x=String(s).toLowerCase();
+  // Drop anything after first comma — it's usually dosage form / dosage spec
+  const comma=x.indexOf(",");
+  if(comma>0)x=x.slice(0,comma);
+  // Clean
+  x=x.replace(/[^a-zа-яі'\s-]/gi,"").trim();
+  return x;
+}
+// Build lookup sets for O(1) check
+const _EML_NORM=new Set();
+for(const[en,uk]of WHO_EML){
+  _EML_NORM.add(normalizeMNN(en));
+  _EML_NORM.add(normalizeMNN(uk));
+}
+function mnnInWHO_EML(mnn){
+  if(!mnn)return false;
+  const n=normalizeMNN(mnn);
+  if(!n||n.length<3)return false;
+  if(_EML_NORM.has(n))return true;
+  // Try first word (for multi-word МНН take the first)
+  const first=n.split(/\s+/)[0];
+  if(first.length>=4 && _EML_NORM.has(first))return true;
+  // Try: check if any known EML МНН is a prefix of the query (handles "амоксицилін+клавуланат" → амоксицилін)
+  for(const e of _EML_NORM){
+    if(e.length>=5 && n.startsWith(e))return true;
+  }
+  return false;
+}
+function getVen(drugName){
+  return venCategories[drugName]||"E";
+}
+function setVen(drugName,cat){
+  if(cat==="E")delete venCategories[drugName];
+  else venCategories[drugName]=cat;
+  try{localStorage.setItem(CACHE_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
+}
+function loadVen(){
+  try{const s=localStorage.getItem(CACHE_KEY+"_ven");if(s)venCategories=JSON.parse(s)||{}}catch(e){}
+}
+// UI: colored badge for category
+function venBadge(cat){
+  const colors={V:"#ef4444",E:"#fbbf24",N:"#94a3b8"};
+  const labels={V:"V",E:"E",N:"N"};
+  return `<span style="display:inline-block;background:${colors[cat]};color:#0d1117;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:.5px">${labels[cat]}</span>`;
+}
+
 // ═══════ ЗАМОВЛЕННЯ ═══════
 // Build order lines: one entry per drug with deficit > 0 that has a matching tender.
 // Returns {lines:[{drugName, f6Unit, f6Stock, need, deficit, monitor, suppliers:[{name, tenders, pk, packUnit, packDeficit, tenderRemaining, pricePerPack, totalCost}]}], noMatch:[], noTender:[]}
@@ -1281,25 +1819,33 @@ for(const l of lines){
 const chosen=ordersSupplierChoice[l.drugName]||(l.suppliers[0]&&l.suppliers[0].name);
 const sup=l.suppliers.find(s=>s.name===chosen)||l.suppliers[0];
 if(!sup)continue;
-// Compute packs to order: ceil(deficit / pk)
+// Compute packs to order: ceil(deficit / pk). User override wins.
 const pk=sup.pk||1;
 const packsNeeded=Math.ceil(l.deficit/pk);
 const qtyInPurchaseUnits=packsNeeded*pk; // actual amount being ordered (in f6 units)
 const packsAvailable=Math.floor(sup.tenderRemaining/pk);
-const packsToOrder=Math.min(packsNeeded,packsAvailable);
+const autoPacks=Math.min(packsNeeded,packsAvailable);
+const overridden=(ordersQtyOverride[l.drugName]!=null);
+const packsToOrder=overridden?Math.max(0,ordersQtyOverride[l.drugName]|0):autoPacks;
 const shortfall=packsNeeded>packsAvailable?packsNeeded-packsAvailable:0;
 const costEstimate=sup.pricePerPack!=null?packsToOrder*sup.pricePerPack:null;
+// VEN: user setting wins; EML gives V-candidate hint
+const mnn=(l.monitor.t&&l.monitor.t[0]&&l.monitor.t[0].mn)||"";
+const ven=getVen(l.drugName);
+const emlCandidate=ven==="E"&&mnnInWHO_EML(mnn);
 if(!bySupplierGroup[sup.name])bySupplierGroup[sup.name]={name:sup.name,items:[],total:0};
 bySupplierGroup[sup.name].items.push({
 drugName:l.drugName,
 commercial:sup.tenders[0].cn||l.drugName,
 contract:sup.tenders[0].c||"",
+mnn,
 f6Unit:l.f6Unit,stock:l.f6Stock,need:l.need,deficit:l.deficit,
 packUnit:sup.packUnit,pk,packsNeeded,packsAvailable,packsToOrder,shortfall,
 qtyInPurchaseUnits:packsToOrder*pk,
 pricePerPack:sup.pricePerPack,costEstimate,
 altSuppliers:l.suppliers.filter(s=>s.name!==sup.name).map(s=>s.name),
 allSuppliers:l.suppliers.map(s=>s.name),
+ven,emlCandidate,overridden,autoPacks,
 });
 if(costEstimate!=null)bySupplierGroup[sup.name].total+=costEstimate;
 }
@@ -1329,12 +1875,62 @@ if(data.needPurchases){
 h+='<div style="padding:10px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);border-radius:10px;color:#93c5fd;font-size:12px;margin-bottom:10px">⏳ Завантажуємо дані закупівель та тендерів у фоні... Сторінка автоматично оновиться.</div>';
 }
 
+// Flatten all items for budget / VEN analysis
+const allItems=[];
+data.supplierOrders.forEach(g=>g.items.forEach(it=>allItems.push({g,it})));
+const venTotals={V:{count:0,cost:0},E:{count:0,cost:0},N:{count:0,cost:0}};
+allItems.forEach(({it})=>{venTotals[it.ven].count++;venTotals[it.ven].cost+=(it.costEstimate||0)});
+
+// Budget mode applies only to V+E; N is always excluded in budget mode
+let budgetSkipped=new Set(); // drug names that don't fit in budget
+if(ordersBudgetEnabled){
+// 1. N excluded always
+allItems.forEach(({it})=>{if(it.ven==="N")budgetSkipped.add(it.drugName)});
+// 2. V + E sorted V first, then by deficit density (higher deficit priority)
+const prioritized=allItems.filter(({it})=>it.ven!=="N").slice().sort((a,b)=>{
+  if(a.it.ven!==b.it.ven)return a.it.ven==="V"?-1:1;
+  return b.it.deficit-a.it.deficit;
+});
+let remaining=ordersBudget||0;
+const kept=new Set();
+for(const{it}of prioritized){
+  const cost=it.costEstimate||0;
+  if(cost<=remaining){kept.add(it.drugName);remaining-=cost}
+  else budgetSkipped.add(it.drugName);
+}
+}
+
+// Header: horizon selector + budget toggle + VEN summary
+h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:11px">';
+h+=`<span style="padding:4px 0;color:var(--muted)">VEN:</span>`;
+h+=`<span>${venBadge("V")} ${venTotals.V.count}</span>`;
+h+=`<span>${venBadge("E")} ${venTotals.E.count}</span>`;
+h+=`<span>${venBadge("N")} ${venTotals.N.count}</span>`;
+h+='<button class="sort-btn" style="margin-left:auto" onclick="exportVEN()">📤 Експорт VEN</button>';
+h+='<label class="sort-btn" style="cursor:pointer">📥 Імпорт VEN<input type="file" accept=".csv" style="display:none" onchange="importVEN(event)"></label>';
+h+='</div>';
+
+// Budget toggle
+h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
+h+=`<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px"><input type="checkbox" ${ordersBudgetEnabled?"checked":""} onchange="toggleBudget(this.checked)"><span>💰 Обмежений бюджет (тільки V+E, N виключено)</span></label>`;
+if(ordersBudgetEnabled){
+h+='<div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+h+=`<input type="number" id="budget-input" value="${ordersBudget}" placeholder="Сума в грн" style="flex:1;min-width:120px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 10px;color:#fff;font-size:13px;outline:none">`;
+h+='<button class="exp-btn" style="background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent)" onclick="applyBudget()">Застосувати</button>';
+h+='</div>';
+const fitCost=data.supplierOrders.reduce((s,g)=>s+g.items.filter(it=>!budgetSkipped.has(it.drugName)).reduce((ss,it)=>ss+(it.costEstimate||0),0),0);
+const skippedCount=budgetSkipped.size;
+h+=`<div style="margin-top:6px;font-size:11px;color:var(--muted)">Входить у бюджет: <strong style="color:var(--green)">${fmt(Math.round(fitCost))} грн</strong>, поза бюджетом: <strong style="color:var(--warn)">${skippedCount}</strong> поз.</div>`;
+}
+h+='</div>';
+
 const totalItems=data.supplierOrders.reduce((s,g)=>s+g.items.length,0);
-const totalCost=data.supplierOrders.reduce((s,g)=>s+g.total,0);
+const activeItems=ordersBudgetEnabled?totalItems-budgetSkipped.size:totalItems;
+const totalCost=data.supplierOrders.reduce((s,g)=>{return s+g.items.filter(it=>!ordersBudgetEnabled||!budgetSkipped.has(it.drugName)).reduce((ss,it)=>ss+(it.costEstimate||0),0)},0);
 // Summary bar
 h+='<div class="stats-bar" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">';
 h+=`<div class="stat-card"><div class="stat-num" style="color:var(--accent)">${data.supplierOrders.length}</div><div class="stat-lbl">Постачальн.</div></div>`;
-h+=`<div class="stat-card"><div class="stat-num" style="color:var(--warn)">${totalItems}</div><div class="stat-lbl">Позицій</div></div>`;
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--warn)">${activeItems}</div><div class="stat-lbl">Позицій</div></div>`;
 h+=`<div class="stat-card"><div class="stat-num" style="color:var(--green);font-size:13px">${fmt(Math.round(totalCost))}</div><div class="stat-lbl">Сума, грн</div></div>`;
 h+='</div>';
 
@@ -1374,49 +1970,96 @@ window._ordersGroups=groups;
 for(let gi=0;gi<groups.length;gi++){
 const g=groups[gi];
 const isExp=ordersExpandedSupplier===g.name;
+// Filter items by budget
+const visibleItems=g.items.filter(it=>!ordersBudgetEnabled||!budgetSkipped.has(it.drugName));
+const visibleCost=visibleItems.reduce((s,it)=>s+(it.costEstimate||0),0);
+const skippedHere=g.items.length-visibleItems.length;
+if(ordersBudgetEnabled&&visibleItems.length===0)continue; // whole supplier out of budget
+// Group items by contract
+const byContract={};
+for(let ii=0;ii<g.items.length;ii++){
+  const it=g.items[ii];
+  const c=it.contract||"(без угоди)";
+  if(!byContract[c])byContract[c]={items:[],total:0,origIdx:[]};
+  byContract[c].items.push(it);
+  byContract[c].origIdx.push(ii);
+  if(!ordersBudgetEnabled||!budgetSkipped.has(it.drugName))byContract[c].total+=(it.costEstimate||0);
+}
+const contractNames=Object.keys(byContract);
 h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${gi})">`;
 h+=`<div class="agr-sup">📝 ${hlPlain(g.name,q)}</div>`;
-h+=`<div class="agr-meta"><span>Позицій: <strong>${g.items.length}</strong></span><span>Сума: <strong>${fmt(Math.round(g.total))} грн</strong></span></div>`;
+h+=`<div class="agr-meta"><span>Позицій: <strong>${visibleItems.length}${skippedHere?` <span style="color:var(--warn)">(+${skippedHere} поза бюджетом)</span>`:""}</strong></span><span>Сума: <strong>${fmt(Math.round(visibleCost))} грн</strong></span>`;
+if(contractNames.length>1)h+=`<span>Угод: <strong>${contractNames.length}</strong></span>`;
+h+='</div>';
 h+='<div class="agr-detail" onclick="event.stopPropagation()">';
 // Action buttons
 h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
 h+=`<button class="exp-btn" style="background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent)" onclick="copyOrderText(${gi})">📋 Копіювати</button>`;
 h+=`<button class="exp-btn" onclick="exportOrderCSV(${gi})">📊 CSV</button>`;
 h+='</div>';
-// Items table
-for(let ii=0;ii<g.items.length;ii++){
-const it=g.items[ii];
-const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
-h+='<div class="agr-item" style="padding-bottom:10px">';
-h+=`<div class="name">${hlPlain(it.drugName,q)}</div>`;
-if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
-h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
-h+=`<div class="row"><span>Потреба (на ${ordersHorizon}д):</span><strong>${fmt(Math.round(it.need))} ${esc(it.f6Unit)}</strong></div>`;
-h+=`<div class="row"><span>Дефіцит:</span><strong style="color:var(--danger)">${fmt(Math.round(it.deficit))} ${esc(it.f6Unit)}</strong></div>`;
-if(it.pk>1){
-h+=`<div class="row"><span>Замовити:</span><strong style="color:var(--accent)">${fmt(it.packsToOrder)} ${esc(it.packUnit)} × ${it.pk} = ${fmt(it.qtyInPurchaseUnits)} ${esc(it.f6Unit)}</strong></div>`;
-}else{
-h+=`<div class="row"><span>Замовити:</span><strong style="color:var(--accent)">${fmt(it.packsToOrder)} ${esc(it.packUnit)}</strong></div>`;
-}
-if(it.pricePerPack!=null){
-h+=`<div class="row"><span>Ціна/${esc(it.packUnit)}:</span><strong>${fmt(it.pricePerPack)} грн</strong></div>`;
-h+=`<div class="row"><span>Сума:</span><strong style="color:var(--green)">${fmt(Math.round(it.costEstimate||0))} грн</strong></div>`;
-}
-if(it.shortfall>0){
-h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:4px;font-size:11px;color:#fca5a5">⚠️ Не вистачає по угоді: ще ${it.shortfall} ${esc(it.packUnit)} (потрібен новий тендер)</div>`;
-}
-if(hasAlts){
-h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Інші постачальники цього препарату:</div>';
-h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-for(let si=0;si<it.allSuppliers.length;si++){
-const sn=it.allSuppliers[si];
-const selected=(sn===g.name);
-h+=`<button class="sort-btn${selected?" active":""}" onclick="chooseOrderSupplierByIdx(${gi},${ii},${si})" style="font-size:10px">${esc(sn)}</button>`;
-}
-h+='</div>';
-}
-h+=`<div style="margin-top:6px"><button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItemByIdx(${gi},${ii})">✕ Прибрати з замовлення</button></div>`;
-h+='</div>';
+
+// Render by contract (if >1) or flat (if =1)
+const showGrouping=contractNames.length>1;
+for(const cName of contractNames){
+  const bucket=byContract[cName];
+  if(showGrouping){
+    h+=`<div style="margin-top:8px;padding:6px 10px;background:rgba(59,130,246,.08);border-left:3px solid var(--blue);border-radius:6px;font-size:11px;color:#93c5fd"><strong>📄 ${esc(cName).slice(0,80)}</strong></div>`;
+  }
+  for(let bIdx=0;bIdx<bucket.items.length;bIdx++){
+    const it=bucket.items[bIdx];
+    const ii=bucket.origIdx[bIdx];
+    const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
+    const outOfBudget=ordersBudgetEnabled&&budgetSkipped.has(it.drugName);
+    h+=`<div class="agr-item" style="padding-bottom:10px;${outOfBudget?'opacity:.4':''}">`;
+    // Title row with VEN badge
+    h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
+    h+=`<span style="cursor:pointer" onclick="openVenPopup(${gi},${ii})" title="Клацни для зміни категорії">${venBadge(it.ven)}</span>`;
+    if(it.emlCandidate)h+='<span style="font-size:10px;color:#f87171;background:rgba(239,68,68,.1);padding:1px 5px;border-radius:4px" title="Цей препарат у WHO EML (Essential Medicines List) — можливо, варто позначити V">⚡WHO EML</span>';
+    if(outOfBudget)h+='<span style="font-size:10px;color:var(--warn);background:rgba(245,158,11,.1);padding:1px 5px;border-radius:4px">поза бюджетом</span>';
+    h+=`<span class="name" style="flex:1">${hlPlain(it.drugName,q)}</span>`;
+    h+='</div>';
+    if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
+    if(it.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">МНН: ${esc(it.mnn).slice(0,80)}</div>`;
+    h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
+    h+=`<div class="row"><span>Потреба (на ${ordersHorizon}д):</span><strong>${fmt(Math.round(it.need))} ${esc(it.f6Unit)}</strong></div>`;
+    h+=`<div class="row"><span>Дефіцит:</span><strong style="color:var(--danger)">${fmt(Math.round(it.deficit))} ${esc(it.f6Unit)}</strong></div>`;
+    // Qty edit row
+    h+=`<div class="row" style="align-items:center"><span>Замовити, ${esc(it.packUnit)}:</span>`;
+    h+=`<span style="display:flex;align-items:center;gap:4px">`;
+    h+=`<input type="number" min="0" step="1" value="${it.packsToOrder}" style="width:70px;background:rgba(255,255,255,.08);border:1px solid ${it.overridden?"var(--accent)":"rgba(255,255,255,.2)"};border-radius:6px;padding:3px 6px;color:#fff;font-size:12px;text-align:right;outline:none" onchange="setOrderQty(${gi},${ii},this.value)" onclick="event.stopPropagation()">`;
+    if(it.overridden)h+=`<button class="sort-btn" style="font-size:9px;padding:2px 6px" onclick="resetOrderQty(${gi},${ii})" title="Повернути авто">↺</button>`;
+    if(it.pk>1)h+=`<span style="color:var(--muted);font-size:11px">× ${it.pk} = ${fmt(it.packsToOrder*it.pk)} ${esc(it.f6Unit)}</span>`;
+    h+='</span></div>';
+    if(it.pricePerPack!=null){
+      h+=`<div class="row"><span>Ціна/${esc(it.packUnit)}:</span><strong>${fmt(it.pricePerPack)} грн</strong></div>`;
+      h+=`<div class="row"><span>Сума:</span><strong style="color:var(--green)">${fmt(Math.round(it.costEstimate||0))} грн</strong></div>`;
+    }
+    // Warnings for over-ordering
+    if(it.packsToOrder>it.packsNeeded){
+      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(59,130,246,.1);border-left:3px solid var(--blue);border-radius:4px;font-size:11px;color:#93c5fd">ℹ️ Замовлено понад дефіцит: +${it.packsToOrder-it.packsNeeded} ${esc(it.packUnit)} про запас</div>`;
+    }
+    if(it.packsToOrder>it.packsAvailable){
+      const over=it.packsToOrder-it.packsAvailable;
+      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:4px;font-size:11px;color:#fca5a5">⚠️ Перевищує залишок по угоді на ${over} ${esc(it.packUnit)} — потрібен новий тендер або розширення</div>`;
+    }else if(it.shortfall>0&&!it.overridden){
+      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:4px;font-size:11px;color:#fca5a5">⚠️ По угоді залишилось лише ${it.packsAvailable} ${esc(it.packUnit)}, потрібно ще ${it.shortfall} (потрібен новий тендер)</div>`;
+    }
+    if(hasAlts){
+      h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Інші постачальники цього препарату:</div>';
+      h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
+      for(let si=0;si<it.allSuppliers.length;si++){
+        const sn=it.allSuppliers[si];
+        const selected=(sn===g.name);
+        h+=`<button class="sort-btn${selected?" active":""}" onclick="chooseOrderSupplierByIdx(${gi},${ii},${si})" style="font-size:10px">${esc(sn)}</button>`;
+      }
+      h+='</div>';
+    }
+    h+=`<div style="margin-top:6px"><button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItemByIdx(${gi},${ii})">✕ Прибрати з замовлення</button></div>`;
+    h+='</div>';
+  }
+  if(showGrouping){
+    h+=`<div style="padding:4px 10px;margin-bottom:6px;font-size:11px;color:var(--muted);text-align:right;border-bottom:1px solid var(--border)">Підсумок по договору: <strong style="color:var(--green)">${fmt(Math.round(bucket.total))} грн</strong></div>`;
+  }
 }
 h+='</div></div>';
 }
@@ -1434,7 +2077,116 @@ h+=`<div style="padding:3px 0;font-size:11px">• ${esc(excludedList[ei])} <butt
 h+='</div></details>';
 }
 
+// VEN popup overlay
+if(venPopupFor){
+const mnn=(function(){
+  for(const g of (window._ordersGroups||[])){
+    for(const it of g.items){if(it.drugName===venPopupFor)return it.mnn||""}
+  }
+  return"";
+})();
+const isInEml=mnnInWHO_EML(mnn);
+const currentCat=getVen(venPopupFor);
+h+='<div onclick="closeVenPopup()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px">';
+h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:440px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+h+='<div style="font-size:15px;font-weight:700;margin-bottom:4px">Категорія препарату</div>';
+h+=`<div style="font-size:12px;color:var(--accent);margin-bottom:4px">${esc(venPopupFor)}</div>`;
+if(mnn)h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-bottom:10px">МНН: ${esc(mnn)}</div>`;
+if(isInEml)h+='<div style="padding:8px 10px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:6px;font-size:11px;color:#fca5a5;margin-bottom:10px">⚡ Цей МНН є у WHO Model List of Essential Medicines — варто розглянути як <strong>V</strong> (життєво важливий).</div>';
+h+='<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px"><strong>V</strong> — vital (життєво важливі, без них є ризик для пацієнта).<br><strong>E</strong> — essential (необхідні для базової допомоги).<br><strong>N</strong> — non-essential (можна замінити).</div>';
+h+='<div style="display:flex;gap:6px;margin-bottom:8px">';
+["V","E","N"].forEach(c=>{
+  const active=(c===currentCat);
+  const colors={V:"#ef4444",E:"#fbbf24",N:"#94a3b8"};
+  h+=`<button onclick="chooseVen('${c}')" style="flex:1;padding:10px;border-radius:10px;border:2px solid ${active?colors[c]:"rgba(255,255,255,.15)"};background:${active?colors[c]+"22":"rgba(255,255,255,.04)"};color:${active?colors[c]:"#cbd5e1"};font-size:14px;font-weight:700;cursor:pointer">${c}</button>`;
+});
+h+='</div>';
+h+='<button class="sort-btn" style="width:100%;padding:8px;font-size:12px" onclick="closeVenPopup()">Закрити</button>';
+h+='</div></div>';
+}
+
 el.innerHTML=h;
+}
+
+function openVenPopup(gi,ii){
+const g=(window._ordersGroups||[])[gi];if(!g)return;
+const it=g.items[ii];if(!it)return;
+venPopupFor=it.drugName;render();
+}
+function closeVenPopup(){venPopupFor=null;render()}
+function chooseVen(cat){
+if(!venPopupFor)return;
+setVen(venPopupFor,cat);
+venPopupFor=null;render();
+}
+function toggleBudget(checked){
+ordersBudgetEnabled=!!checked;
+render();
+}
+function applyBudget(){
+const inp=document.getElementById("budget-input");
+if(!inp)return;
+const v=parseFloat(inp.value)||0;
+ordersBudget=v;
+render();
+}
+function setOrderQty(gi,ii,v){
+const g=(window._ordersGroups||[])[gi];if(!g)return;
+const it=g.items[ii];if(!it)return;
+const n=Math.max(0,parseInt(v)||0);
+if(n===it.autoPacks)delete ordersQtyOverride[it.drugName];
+else ordersQtyOverride[it.drugName]=n;
+render();
+}
+function resetOrderQty(gi,ii){
+const g=(window._ordersGroups||[])[gi];if(!g)return;
+const it=g.items[ii];if(!it)return;
+delete ordersQtyOverride[it.drugName];
+render();
+}
+// Export/import VEN as CSV
+function exportVEN(){
+const rows=[["Назва препарату","МНН","Категорія"]];
+const seen=new Set();
+// Include all user-set
+Object.keys(venCategories).forEach(n=>{seen.add(n);rows.push([n,"",venCategories[n]])});
+// Include ones currently in orders
+for(const g of (window._ordersGroups||[])){
+  for(const it of g.items){
+    if(seen.has(it.drugName))continue;
+    seen.add(it.drugName);
+    rows.push([it.drugName,it.mnn||"",it.ven]);
+  }
+}
+const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
+const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");
+a.href="data:text/csv;base64,"+b64;a.download="ven_"+new Date().toISOString().slice(0,10)+".csv";
+document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
+function importVEN(event){
+const file=event.target.files&&event.target.files[0];
+if(!file)return;
+const reader=new FileReader();
+reader.onload=e=>{
+try{
+let txt=e.target.result;
+if(txt.charCodeAt(0)===0xFEFF)txt=txt.slice(1);
+const lines=txt.split(/\r?\n/).filter(x=>x.trim());
+let imported=0;
+for(let i=1;i<lines.length;i++){
+const parts=lines[i].split(";").map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"'));
+if(parts.length<3)continue;
+const name=parts[0].trim();const cat=parts[2].trim().toUpperCase();
+if(!name||!["V","E","N"].includes(cat))continue;
+setVen(name,cat);
+imported++;
+}
+alert("Імпортовано: "+imported+" позицій");
+render();
+}catch(err){alert("Помилка імпорту: "+err.message)}
+};
+reader.readAsText(file,"utf-8");
+event.target.value="";
 }
 
 function toggleOrderSupplier(gi){
@@ -1471,25 +2223,60 @@ render();
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
-let txt=`Замовлення для «${g.name}»\n`;
-txt+=`Горизонт: ${ordersHorizon} днів\n\n`;
-g.items.forEach((it,i)=>{
-txt+=`${i+1}. ${it.drugName}\n`;
+// Apply budget filter
+const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+if(!visible.length)return"";
+let txt=`Замовлення для «${g.name}»\nГоризонт: ${ordersHorizon} днів\n`;
+if(ordersBudgetEnabled)txt+=`Режим: обмежений бюджет (${ordersBudget} грн, V+E)\n`;
+txt+="\n";
+// Group by contract
+const byContract={};
+visible.forEach(it=>{const c=it.contract||"(без угоди)";if(!byContract[c])byContract[c]=[];byContract[c].push(it)});
+const contracts=Object.keys(byContract);
+let total=0,idx=0;
+for(const cName of contracts){
+if(contracts.length>1)txt+=`━━━ ${cName} ━━━\n`;
+let contractTotal=0;
+for(const it of byContract[cName]){
+idx++;
+txt+=`${idx}. [${it.ven}] ${it.drugName}\n`;
 txt+=`   Замовити: ${it.packsToOrder} ${it.packUnit}`;
 if(it.pk>1)txt+=` (= ${it.qtyInPurchaseUnits} ${it.f6Unit})`;
 txt+="\n";
 if(it.pricePerPack!=null)txt+=`   Ціна: ${it.pricePerPack} грн/${it.packUnit} · Сума: ${Math.round(it.costEstimate||0)} грн\n`;
-if(it.contract)txt+=`   Угода: ${it.contract}\n`;
-if(it.shortfall>0)txt+=`   ⚠ Бракує ${it.shortfall} ${it.packUnit} — потрібен новий тендер\n`;
+if(it.shortfall>0&&it.packsToOrder<it.packsNeeded)txt+=`   ⚠ Бракує ${it.shortfall} ${it.packUnit} — потрібен новий тендер\n`;
+contractTotal+=(it.costEstimate||0);
+total+=(it.costEstimate||0);
 txt+="\n";
-});
-txt+=`РАЗОМ: ${g.items.length} позицій, ~${Math.round(g.total)} грн\n`;
+}
+if(contracts.length>1)txt+=`Підсумок по договору: ${Math.round(contractTotal)} грн\n\n`;
+}
+txt+=`РАЗОМ: ${visible.length} позицій, ~${Math.round(total)} грн\n`;
 return txt;
+}
+function _isBudgetSkipped(it){
+// Reconstruct the budget-skipped set — we don't cache it, just recompute
+if(!ordersBudgetEnabled)return false;
+if(it.ven==="N")return true;
+// V+E: fit in budget?
+const all=[];
+(window._ordersGroups||[]).forEach(g=>g.items.forEach(i=>all.push(i)));
+const prioritized=all.filter(x=>x.ven!=="N").slice().sort((a,b)=>{
+  if(a.ven!==b.ven)return a.ven==="V"?-1:1;
+  return b.deficit-a.deficit;
+});
+let rem=ordersBudget||0;
+for(const x of prioritized){
+  const c=x.costEstimate||0;
+  if(c<=rem){rem-=c;if(x.drugName===it.drugName)return false}
+  else if(x.drugName===it.drugName)return true;
+}
+return false;
 }
 function copyOrderText(gi){
 if(event)event.stopPropagation();
 const txt=buildOrderText(gi);
-if(!txt)return;
+if(!txt){alert("Нема що копіювати (порожнє замовлення або поза бюджетом)");return}
 const btn=event&&event.target;
 const flash=()=>{if(!btn)return;const old=btn.textContent;btn.textContent="✓ Скопійовано";setTimeout(()=>{btn.textContent=old},1500)};
 if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -1504,9 +2291,14 @@ function exportOrderCSV(gi){
 if(event)event.stopPropagation();
 const g=(window._ordersGroups||[])[gi];
 if(!g)return;
-const rows=[["№","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
-g.items.forEach((it,i)=>rows.push([i+1,it.drugName,it.contract,it.packsToOrder,it.pk,it.qtyInPurchaseUnits,it.f6Unit,it.pricePerPack||"",Math.round(it.costEstimate||0)]));
-rows.push(["","РАЗОМ","","","","","","",Math.round(g.total)]);
+const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+const rows=[["№","VEN","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
+let total=0;
+visible.forEach((it,i)=>{
+rows.push([i+1,it.ven,it.drugName,it.contract,it.packsToOrder,it.pk,it.qtyInPurchaseUnits,it.f6Unit,it.pricePerPack||"",Math.round(it.costEstimate||0)]);
+total+=(it.costEstimate||0);
+});
+rows.push(["","","РАЗОМ","","","","","","",Math.round(total)]);
 const csv="\uFEFF"+rows.map(r=>r.map(c=>{const s=String(c??"");return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s}).join(";")).join("\n");
 const b64=btoa(unescape(encodeURIComponent(csv)));const a=document.createElement("a");
 a.href="data:text/csv;base64,"+b64;a.download="zamovlennya_"+g.name.replace(/[^а-яА-Яa-zA-Z0-9]/g,"_")+".csv";
@@ -1543,6 +2335,7 @@ if(f6Months.length)fetchF6Background();
 // If user has F6 but no purchases data — preload for cross-nav
 if(f6Months.length&&allData.length===0)fetchDriveBackground();
 }
+loadVen();
 showHome();
 })();
 </script>
