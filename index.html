@@ -806,6 +806,7 @@ let ordersAddPacks=1;
 let ordersVenFilter="all";    // "all" | "V" | "E" | "N"
 let ordersAbcFilter="all";    // "all" | "A" | "B" | "C"
 let ordersHidePending=false;  // if true, hide items marked as pending
+let ordersPendingDialog=false; // modal showing list of pending orders
 
 function toggleFilter(k){
 if(k==="all"){if(currentFilter==="all"){showAllCards=!showAllCards}else{currentFilter="all";showAllCards=true}}
@@ -1437,6 +1438,14 @@ if(ordersAddDialog){
   },0);
 }else{
   const overlay=document.getElementById("add-dialog-overlay");
+  if(overlay)overlay.innerHTML="";
+}
+// Pending list dialog
+if(ordersPendingDialog){
+  const overlay=document.getElementById("pending-dialog-overlay")||(()=>{const d=document.createElement("div");d.id="pending-dialog-overlay";document.body.appendChild(d);return d})();
+  overlay.innerHTML=buildPendingDialog();
+}else{
+  const overlay=document.getElementById("pending-dialog-overlay");
   if(overlay)overlay.innerHTML="";
 }
 }
@@ -2093,17 +2102,34 @@ h+='<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">';
 h+='<button class="exp-btn" style="background:rgba(59,130,246,.15);border-color:var(--blue);color:#93c5fd" onclick="openAddDialog()">➕ Додати позицію вручну</button>';
 if(ordersManual.length)h+=`<span style="padding:5px 0;font-size:11px;color:var(--muted)">Додано вручну: <strong>${ordersManual.length}</strong></span>`;
 const pendingCount=Object.keys(ordersPending).length;
-if(pendingCount)h+=`<span style="padding:5px 0;font-size:11px;color:#a78bfa">⏳ Очікується: <strong>${pendingCount}</strong></span>`;
+if(pendingCount)h+=`<button class="exp-btn" style="background:rgba(139,92,246,.15);border-color:#8b5cf6;color:#c4b5fd" onclick="openPendingDialog()">⏳ Очікується: <strong>${pendingCount}</strong></button>`;
 h+='</div>';
 
-const totalItems=data.supplierOrders.reduce((s,g)=>s+g.items.length,0);
-const activeItems=ordersBudgetEnabled?totalItems-budgetSkipped.size:totalItems;
-const totalCost=data.supplierOrders.reduce((s,g)=>{return s+g.items.filter(it=>!ordersBudgetEnabled||!budgetSkipped.has(it.drugName)).reduce((ss,it)=>ss+(it.costEstimate||0),0)},0);
+// Unified visibility predicate — defined early so summary counts respect filters
+function _orderVisible(it,gName){
+  if(ordersBudgetEnabled&&budgetSkipped.has(it.drugName))return false;
+  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return false;
+  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return false;
+  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return false;
+  return true;
+}
+// Count suppliers that have at least one visible item
+let visibleSupplierCount=0;
+let visibleItemsCount=0;
+let visibleTotalCost=0;
+data.supplierOrders.forEach(g=>{
+  const vis=g.items.filter(it=>_orderVisible(it,g.name));
+  if(vis.length){
+    visibleSupplierCount++;
+    visibleItemsCount+=vis.length;
+    visibleTotalCost+=vis.reduce((s,it)=>s+(it.costEstimate||0),0);
+  }
+});
 // Summary bar
 h+='<div class="stats-bar" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">';
-h+=`<div class="stat-card"><div class="stat-num" style="color:var(--accent)">${data.supplierOrders.length}</div><div class="stat-lbl">Постачальн.</div></div>`;
-h+=`<div class="stat-card"><div class="stat-num" style="color:var(--warn)">${activeItems}</div><div class="stat-lbl">Позицій</div></div>`;
-h+=`<div class="stat-card"><div class="stat-num" style="color:var(--green);font-size:13px">${fmt(Math.round(totalCost))}</div><div class="stat-lbl">Сума, грн</div></div>`;
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--accent)">${visibleSupplierCount}</div><div class="stat-lbl">Постачальн.</div></div>`;
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--warn)">${visibleItemsCount}</div><div class="stat-lbl">Позицій</div></div>`;
+h+=`<div class="stat-card"><div class="stat-num" style="color:var(--green);font-size:13px">${fmt(Math.round(visibleTotalCost))}</div><div class="stat-lbl">Сума, грн</div></div>`;
 h+='</div>';
 
 // Filters row
@@ -2151,14 +2177,6 @@ groups=groups.map(g=>({...g,items:g.items.filter(it=>{const hay=(g.name+" "+it.d
 
 // Render each supplier as expandable card
 window._ordersGroups=groups;
-// Unified visibility predicate for each item
-function _orderVisible(it,gName){
-  if(ordersBudgetEnabled&&budgetSkipped.has(it.drugName))return false;
-  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return false;
-  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return false;
-  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return false;
-  return true;
-}
 for(let gi=0;gi<groups.length;gi++){
 const g=groups[gi];
 const isExp=ordersExpandedSupplier===g.name;
@@ -2318,6 +2336,69 @@ function closeAddDialog(){
   ordersAddDialog=false;
   ordersAddPicked=null;
   render();
+}
+function openPendingDialog(){
+  if(event)event.stopPropagation();
+  ordersPendingDialog=true;
+  render();
+}
+function closePendingDialog(){
+  ordersPendingDialog=false;
+  render();
+}
+function removePending(key){
+  if(event)event.stopPropagation();
+  delete ordersPending[key];
+  savePending();render();
+}
+function clearAllPending(){
+  if(event)event.stopPropagation();
+  if(!confirm("Прибрати всі позначки «очікується»? Це дія незворотна."))return;
+  ordersPending={};
+  savePending();render();
+}
+function buildPendingDialog(){
+  const keys=Object.keys(ordersPending).sort((a,b)=>{
+    const ta=ordersPending[a].ts||"";
+    const tb=ordersPending[b].ts||"";
+    return tb.localeCompare(ta); // newest first
+  });
+  let h='';
+  h+='<div onclick="closePendingDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:105;display:flex;align-items:center;justify-content:center;padding:8px">';
+  h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+  h+=`<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#c4b5fd">⏳ Позиції, що очікуються (${keys.length})</div>`;
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається, коли у Формі 6 зʼявляється надходження, або через 30 днів.</div>';
+  if(!keys.length){
+    h+='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Нічого не очікується</div>';
+  }else{
+    h+='<div style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;background:rgba(20,24,30,.5)">';
+    for(const key of keys){
+      const p=ordersPending[key];
+      const d=p.ts?new Date(p.ts):null;
+      const daysSince=d?Math.floor((Date.now()-d.getTime())/(24*60*60*1000)):0;
+      const daysLeft=PENDING_EXPIRE_DAYS-daysSince;
+      h+=`<div style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">`;
+      h+=`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">`;
+      h+=`<div style="flex:1;min-width:0">`;
+      h+=`<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px">${esc(p.drugName||"?").slice(0,80)}</div>`;
+      h+=`<div style="font-size:10px;color:var(--accent)">Постачальник: ${esc(p.supplier||"?")}</div>`;
+      h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">`;
+      if(d)h+=`${d.toLocaleDateString("uk-UA")} (${daysSince}д тому)`;
+      h+=` · ${p.f6Name?"відстеж. за Формою 6":`авто-зняття за ${daysLeft>0?daysLeft+"д":"скоро"}`}`;
+      h+=`</div>`;
+      h+=`</div>`;
+      h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger);flex-shrink:0" onclick="removePending('${key.replace(/'/g,"&#39;")}')">✕</button>`;
+      h+=`</div>`;
+      h+=`</div>`;
+    }
+    h+='</div>';
+    h+='<div style="display:flex;gap:6px;margin-top:10px">';
+    h+='<button class="sort-btn" style="flex:1;padding:8px;font-size:12px" onclick="closePendingDialog()">Закрити</button>';
+    h+='<button class="sort-btn" style="flex:1;padding:8px;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="clearAllPending()">🗑 Очистити все</button>';
+    h+='</div>';
+  }
+  h+='</div></div>';
+  return h;
 }
 function onAddSearchInput(v){
   ordersAddQuery=v;
@@ -2696,15 +2777,17 @@ delete ordersExcluded[name];
 render();
 }
 
+// Standard header inserted at top of every outgoing order message
+const ORDER_HEADER="Замовлення 1ТМО Львів, вул. Миколайчука, 9.\nОстап 066-795-92-61, 097-045-12-55.";
+
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
 // Apply budget filter
 const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
 if(!visible.length)return"";
-let txt=`Замовлення для «${g.name}»\nГоризонт: ${ordersHorizon} днів\n`;
-if(ordersBudgetEnabled)txt+=`Режим: обмежений бюджет (${ordersBudget} грн, V+E)\n`;
-txt+="\n";
+let txt=ORDER_HEADER+"\n\n";
+txt+=`Постачальник: ${g.name}\n\n`;
 // Group by contract
 const byContract={};
 visible.forEach(it=>{const c=it.contract||"(без угоди)";if(!byContract[c])byContract[c]=[];byContract[c].push(it)});
@@ -2715,7 +2798,7 @@ if(contracts.length>1)txt+=`━━━ ${cName} ━━━\n`;
 let contractTotal=0;
 for(const it of byContract[cName]){
 idx++;
-txt+=`${idx}. [${it.ven}] ${it.drugName}\n`;
+txt+=`${idx}. ${it.drugName}\n`;
 txt+=`   Замовити: ${it.packsToOrder} ${it.packUnit}`;
 if(it.pk>1)txt+=` (= ${it.qtyInPurchaseUnits} ${it.f6Unit})`;
 txt+="\n";
@@ -2792,7 +2875,8 @@ function _shorterOrderText(gi){
   if(!g)return"";
   const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
   if(!visible.length)return"";
-  let txt=`Замовлення для «${g.name}» (на ${ordersHorizon}д)\n\n`;
+  let txt=ORDER_HEADER+"\n\n";
+  txt+=`Постачальник: ${g.name}\n\n`;
   let total=0;
   visible.forEach((it,i)=>{
     txt+=`${i+1}. ${it.drugName} — ${it.packsToOrder} ${it.packUnit}`;
@@ -2822,7 +2906,7 @@ function sendOrderEmail(gi){
   const fullTxt=buildOrderText(gi);
   if(!fullTxt){alert("Нема що надсилати");return}
   // Email can handle longer bodies, but some clients still choke >2KB
-  const subject=`Замовлення на ${ordersHorizon} днів — ${g.name}`;
+  const subject=`Замовлення 1ТМО Львів — ${g.name}`;
   const body=fullTxt;
   // Detect long body → copy + open with short preview
   if(encodeURIComponent(body).length>_MSG_MAX_URL*2){
@@ -2863,8 +2947,24 @@ function sendOrderViber(gi){
 }
 function sendOrderTelegram(gi){
   if(event)event.stopPropagation();
-  // Telegram share URL: if no t.me/... target, user picks chat
-  _sendVia(gi,(t)=>`https://t.me/share/url?url=&text=${t}`,"Telegram");
+  // Telegram share: t.me/share/url requires both url & text.
+  // Best UX: put the message as `url` param — Telegram will show it as the shared content.
+  // Short text goes in URL param because Telegram shows the "url" field prominently.
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const full=buildOrderText(gi);
+  if(!full){alert("Нема що надсилати");return}
+  _copyToClipboardSilent(full);
+  // Telegram works better when whole message is in `url` param (text is a note)
+  const shortTxt=_shorterOrderText(gi);
+  const payload=encodeURIComponent(full).length>_MSG_MAX_URL?shortTxt:full;
+  window.open(`https://t.me/share/url?url=${encodeURIComponent(payload)}`,"_blank");
+  setTimeout(()=>{
+    const note=document.createElement("div");
+    note.textContent="📋 Повний текст скопійовано — вставте у Telegram через Ctrl+V";
+    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw";
+    document.body.appendChild(note);
+    setTimeout(()=>note.remove(),4000);
+  },200);
 }
 function sendOrderWhatsApp(gi){
   if(event)event.stopPropagation();
