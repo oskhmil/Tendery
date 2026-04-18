@@ -268,7 +268,10 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v36";
+const CACHE_KEY = "tendertrack_v38";
+// Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
+// NOT tied to version — survives all code updates.
+const USER_KEY = "tendertrack_user";
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -1220,6 +1223,7 @@ try{
 const buf=await fetch(GDRIVE_F6).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()});
 f6Months=parseForma6(buf);
 f6LastUpdated=new Date();
+cleanupPendingByIncome();
 saveCache();
 const onHome=!document.getElementById("home-screen").classList.contains("hidden");
 if(!onHome&&currentView==="consumption")showMain();
@@ -1234,6 +1238,7 @@ showLoader("Обробка Форми 6...");
 setTimeout(()=>{
 f6Months=parseForma6(e.target.result);
 f6LastUpdated=new Date();
+cleanupPendingByIncome();
 saveCache();showMain();
 },50);
 }catch(err){document.getElementById("f6-start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>';showScreen("f6start")}
@@ -1807,17 +1812,30 @@ function mnnInWHO_EML(mnn){
 function setVen(drugName,cat){
   // "E" is default, but we still save explicitly so that E chosen by user over auto-V persists
   venCategories[drugName]=cat;
-  try{localStorage.setItem(CACHE_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
+  try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
 }
 function loadVen(){
-  try{const s=localStorage.getItem(CACHE_KEY+"_ven");if(s)venCategories=JSON.parse(s)||{}}catch(e){}
-  try{const s=localStorage.getItem(CACHE_KEY+"_manual");if(s)ordersManual=JSON.parse(s)||[]}catch(e){}
-  try{const s=localStorage.getItem(CACHE_KEY+"_pending");if(s)ordersPending=JSON.parse(s)||{}}catch(e){}
-  try{const s=localStorage.getItem(CACHE_KEY+"_qty");if(s)ordersQtyOverride=JSON.parse(s)||{}}catch(e){}
+  // Try new USER_KEY first; fall back to any old versioned key for migration
+  function loadKey(suffix){
+    try{const s=localStorage.getItem(USER_KEY+suffix);if(s)return JSON.parse(s)}catch(e){}
+    // Migration: try common old versioned keys
+    for(const ver of ["v36","v35","v34","v33","v32","v31","v30"]){
+      try{const s=localStorage.getItem("tendertrack_"+ver+suffix);if(s){const v=JSON.parse(s);if(v){
+        // Re-save under new key, then clear old
+        try{localStorage.setItem(USER_KEY+suffix,JSON.stringify(v))}catch{}
+        return v;
+      }}}catch(e){}
+    }
+    return null;
+  }
+  const v=loadKey("_ven");if(v)venCategories=v||{};
+  const m=loadKey("_manual");if(m)ordersManual=m||[];
+  const p=loadKey("_pending");if(p)ordersPending=p||{};
+  const q=loadKey("_qty");if(q)ordersQtyOverride=q||{};
 }
-function saveManual(){try{localStorage.setItem(CACHE_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
-function savePending(){try{localStorage.setItem(CACHE_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
-function saveQtyOverride(){try{localStorage.setItem(CACHE_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
+function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
+function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
+function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
 // Automatic VEN: WHO EML → V by default; user override takes precedence
 function getVen(drugName,mnn){
   // User override wins (even if user set to N for something in EML)
@@ -2171,6 +2189,10 @@ h+='<div class="agr-detail" onclick="event.stopPropagation()">';
 h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
 h+=`<button class="exp-btn" style="background:rgba(34,197,94,.15);border-color:var(--accent);color:var(--accent)" onclick="copyOrderText(${gi})">📋 Копіювати</button>`;
 h+=`<button class="exp-btn" onclick="exportOrderCSV(${gi})">📊 CSV</button>`;
+h+=`<button class="exp-btn" style="background:rgba(59,130,246,.15);border-color:var(--blue);color:#93c5fd" onclick="sendOrderEmail(${gi})" title="Відкрити пошту з готовим листом">📧 Email</button>`;
+h+=`<button class="exp-btn" style="background:rgba(139,92,246,.15);border-color:#8b5cf6;color:#c4b5fd" onclick="sendOrderViber(${gi})" title="Надіслати у Viber">💜 Viber</button>`;
+h+=`<button class="exp-btn" style="background:rgba(14,165,233,.15);border-color:#0ea5e9;color:#7dd3fc" onclick="sendOrderTelegram(${gi})" title="Надіслати у Telegram">✈️ Telegram</button>`;
+h+=`<button class="exp-btn" style="background:rgba(16,185,129,.15);border-color:#10b981;color:#6ee7b7" onclick="sendOrderWhatsApp(${gi})" title="Надіслати у WhatsApp">💬 WhatsApp</button>`;
 h+='</div>';
 
 // Render by contract (if >1) or flat (if =1)
@@ -2245,9 +2267,19 @@ for(const cName of contractNames){
     }
     h+='</div>';
     if(isPending){
-      const ts=ordersPending[pKey].ts;
+      const p=ordersPending[pKey];
+      const ts=p.ts;
       const d=ts?new Date(ts):null;
-      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(139,92,246,.08);border-left:3px solid #8b5cf6;border-radius:4px;font-size:10px;color:#c4b5fd">✓ Замовлено${d?" "+d.toLocaleDateString("uk-UA"):""}</div>`;
+      let info="";
+      if(d){
+        const daysSince=Math.floor((Date.now()-d.getTime())/(24*60*60*1000));
+        const daysLeft=PENDING_EXPIRE_DAYS-daysSince;
+        info=` ${d.toLocaleDateString("uk-UA")} (${daysSince}д тому)`;
+        // F6 tracking status
+        const f6Info=p.f6Name?"відстеж. за Формою 6":"авто-зняття за "+(daysLeft>0?daysLeft+"д":"скоро");
+        info+=` · ${f6Info}`;
+      }
+      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(139,92,246,.08);border-left:3px solid #8b5cf6;border-radius:4px;font-size:10px;color:#c4b5fd">✓ Замовлено${info}</div>`;
     }
     h+='</div>';
   }
@@ -2348,13 +2380,82 @@ function setManualPacks(id,v){
   saveManual();
   render();
 }
+// Auto-expire "pending" flags older than PENDING_EXPIRE_DAYS days
+const PENDING_EXPIRE_DAYS=30;
+function cleanupPending(){
+  const now=Date.now();
+  const cutoff=PENDING_EXPIRE_DAYS*24*60*60*1000;
+  let changed=false;
+  for(const k of Object.keys(ordersPending)){
+    const ts=ordersPending[k]&&ordersPending[k].ts;
+    if(!ts){delete ordersPending[k];changed=true;continue}
+    if(now-new Date(ts).getTime()>cutoff){delete ordersPending[k];changed=true}
+  }
+  if(changed)savePending();
+}
+// Get total income across all F6 months for a given drug name.
+// Returns 0 if not found.
+function totalIncomeForDrug(drugName){
+  if(!f6Months||!f6Months.length)return 0;
+  let total=0;
+  for(const m of f6Months){
+    const d=m.drugs&&m.drugs[drugName];
+    if(d&&typeof d.income==="number")total+=d.income;
+  }
+  return total;
+}
+// Resolve the F6 name corresponding to a drug — F6 names and purchase names may differ slightly.
+// Uses findInMonitor reverse lookup. Returns the F6 drug name if found.
+function resolveF6Name(drugName){
+  if(!f6Months||!f6Months.length)return null;
+  // Direct match first
+  for(const m of f6Months){
+    if(m.drugs&&m.drugs[drugName])return drugName;
+  }
+  // Otherwise scan all F6 names via findInMonitor in reverse
+  if(typeof findInMonitor!=="function")return null;
+  const allF6Names=new Set();
+  f6Months.forEach(m=>{if(m.drugs)Object.keys(m.drugs).forEach(n=>allF6Names.add(n))});
+  for(const f6n of allF6Names){
+    const monitor=findInMonitor(f6n);
+    if(monitor&&monitor.n===drugName)return f6n;
+  }
+  return null;
+}
+
+// Auto-remove "pending" flags when F6 shows new income since the mark was set
+function cleanupPendingByIncome(){
+  let changed=false;
+  for(const key of Object.keys(ordersPending)){
+    const p=ordersPending[key];
+    if(!p||p.incomeAtMark==null)continue;  // skip old-style marks without snapshot
+    const f6n=resolveF6Name(p.drugName);
+    if(!f6n)continue;
+    const currentIncome=totalIncomeForDrug(f6n);
+    if(currentIncome>p.incomeAtMark){
+      delete ordersPending[key];
+      changed=true;
+    }
+  }
+  if(changed)savePending();
+}
+
 function togglePending(gi,ii,checked){
   if(event)event.stopPropagation();
   const g=(window._ordersGroups||[])[gi];if(!g)return;
   const it=g.items[ii];if(!it)return;
   const key=it.drugName+"|"+g.name;
   if(checked){
-    ordersPending[key]={ts:new Date().toISOString(),drugName:it.drugName,supplier:g.name};
+    // Snapshot the current F6 total income; if it grows later → auto-remove
+    const f6n=resolveF6Name(it.drugName);
+    const incomeAtMark=f6n?totalIncomeForDrug(f6n):0;
+    ordersPending[key]={
+      ts:new Date().toISOString(),
+      drugName:it.drugName,
+      supplier:g.name,
+      incomeAtMark,
+      f6Name:f6n||null,
+    };
   }else{
     delete ordersPending[key];
   }
@@ -2491,7 +2592,7 @@ venPopupFor=null;render();
 function resetVen(){
 if(!venPopupFor)return;
 delete venCategories[venPopupFor];
-try{localStorage.setItem(CACHE_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
+try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
 venPopupFor=null;render();
 }
 function toggleBudget(checked){
@@ -2680,6 +2781,97 @@ a.href="data:text/csv;base64,"+b64;a.download="zamovlennya_"+g.name.replace(/[^�
 document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
+// Send order via email, Viber, Telegram, WhatsApp.
+// Messenger URL schemes have size limits (~2KB); if text exceeds that,
+// we copy full text to clipboard and open a shorter preview in the app.
+const _MSG_MAX_URL=1800; // conservative cap for messenger deep-links
+
+function _shorterOrderText(gi){
+  // Produce a compact version (no empty lines between items, no decorators)
+  const g=(window._ordersGroups||[])[gi];
+  if(!g)return"";
+  const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+  if(!visible.length)return"";
+  let txt=`Замовлення для «${g.name}» (на ${ordersHorizon}д)\n\n`;
+  let total=0;
+  visible.forEach((it,i)=>{
+    txt+=`${i+1}. ${it.drugName} — ${it.packsToOrder} ${it.packUnit}`;
+    if(it.pricePerPack!=null){txt+=` × ${it.pricePerPack}грн = ${Math.round(it.costEstimate||0)}грн`;total+=(it.costEstimate||0)}
+    txt+="\n";
+  });
+  if(total>0)txt+=`\nРАЗОМ: ~${Math.round(total)} грн`;
+  return txt;
+}
+
+function _copyToClipboardSilent(text){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    try{navigator.clipboard.writeText(text);return true}catch(e){}
+  }
+  try{
+    const ta=document.createElement("textarea");ta.value=text;
+    ta.style.position="fixed";ta.style.left="-9999px";
+    document.body.appendChild(ta);ta.select();
+    document.execCommand("copy");document.body.removeChild(ta);
+    return true;
+  }catch(e){return false}
+}
+
+function sendOrderEmail(gi){
+  if(event)event.stopPropagation();
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const fullTxt=buildOrderText(gi);
+  if(!fullTxt){alert("Нема що надсилати");return}
+  // Email can handle longer bodies, but some clients still choke >2KB
+  const subject=`Замовлення на ${ordersHorizon} днів — ${g.name}`;
+  const body=fullTxt;
+  // Detect long body → copy + open with short preview
+  if(encodeURIComponent(body).length>_MSG_MAX_URL*2){
+    _copyToClipboardSilent(body);
+    const short=_shorterOrderText(gi);
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(short+"\n\n(Повний текст скопійовано — вставте через Ctrl+V)")}`);
+  }else{
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+  }
+}
+
+function _sendVia(gi,builder,label){
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const full=buildOrderText(gi);
+  if(!full){alert("Нема що надсилати");return}
+  // Always copy full text so user can paste if deep-link can't fit everything
+  const copied=_copyToClipboardSilent(full);
+  // Prefer short text in deep-link if full > limit
+  const shortTxt=_shorterOrderText(gi);
+  const payload=encodeURIComponent(full).length>_MSG_MAX_URL?shortTxt:full;
+  const url=builder(payload);
+  window.open(url,"_blank");
+  if(copied){
+    // Hint: full text is in clipboard
+    setTimeout(()=>{
+      const note=document.createElement("div");
+      note.textContent="📋 Повний текст замовлення скопійовано — вставте у "+label+" через Ctrl+V";
+      note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw";
+      document.body.appendChild(note);
+      setTimeout(()=>note.remove(),4000);
+    },200);
+  }
+}
+
+function sendOrderViber(gi){
+  if(event)event.stopPropagation();
+  _sendVia(gi,(t)=>`viber://forward?text=${t}`,"Viber");
+}
+function sendOrderTelegram(gi){
+  if(event)event.stopPropagation();
+  // Telegram share URL: if no t.me/... target, user picks chat
+  _sendVia(gi,(t)=>`https://t.me/share/url?url=&text=${t}`,"Telegram");
+}
+function sendOrderWhatsApp(gi){
+  if(event)event.stopPropagation();
+  // wa.me without phone → asks user to pick contact
+  _sendVia(gi,(t)=>`https://wa.me/?text=${t}`,"WhatsApp");
+}
+
 function renderConflicts(el){
 const conflicts=allData.filter(d=>d.multi&&!d.alloc);
 if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл внесено у лист "Розподіл" файлу тендерів</div></div>';return}
@@ -2711,6 +2903,8 @@ if(f6Months.length)fetchF6Background();
 if(f6Months.length&&allData.length===0)fetchDriveBackground();
 }
 loadVen();
+cleanupPending();
+cleanupPendingByIncome();
 showHome();
 })();
 </script>
