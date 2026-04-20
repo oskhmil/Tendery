@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v39";
+const CACHE_KEY = "tendertrack_v41";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1386,6 +1386,9 @@ document.getElementById("btn-upload").classList.toggle("hidden",!isPurchases);
 document.getElementById("btn-f6-refresh").classList.toggle("hidden",!isConsumption);
 document.getElementById("btn-f6-upload").classList.toggle("hidden",!isConsumption);
 updateNavBtns();
+// Don't touch search-area visibility if we're on home screen (showScreen owns it)
+const onHomeScreen=!document.getElementById("home-screen").classList.contains("hidden");
+if(onHomeScreen)return;
 // Unified sticky search — shown for monitor views; for orders too (пошук по постачальнику/назві)
 const pw=document.getElementById("pinned-wrap");
 const sw=document.getElementById("search-wrap");
@@ -1898,7 +1901,9 @@ async function syncPull(silent){
   if(!_syncEnabled||!SYNC_URL)return false;
   if(!silent){_syncStatus="downloading";updateSyncIndicator()}
   try{
-    const r=await fetch(SYNC_URL+"?key="+encodeURIComponent(SYNC_KEY));
+    // POST with action:"read" — avoids CORS preflight (text/plain body)
+    const body={key:SYNC_KEY,action:"read"};
+    const r=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"text/plain;charset=utf-8"}});
     const j=await r.json();
     if(j.ok&&j.state){
       // Only apply if remote has content (avoid wiping fresh local with empty remote on first run)
