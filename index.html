@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v42";
+const CACHE_KEY = "tendertrack_v43";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -3129,6 +3129,17 @@ syncPull(false).then(changed=>{
     cleanupPendingByIncome();
     render();
   }
+});
+// Auto-pull when tab becomes visible again (e.g. user switches back from another tab/app).
+// Cheap, battery-friendly — no polling. Throttled: minimum 10 sec between pulls.
+let _lastVisPull=Date.now();
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible")return;
+  if(Date.now()-_lastVisPull<10000)return;
+  _lastVisPull=Date.now();
+  syncPull(true).then(changed=>{
+    if(changed){cleanupPending();cleanupPendingByIncome();render()}
+  });
 });
 })();
 </script>
