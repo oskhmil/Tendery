@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v43";
+const CACHE_KEY = "tendertrack_v44";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -2224,6 +2224,14 @@ function _orderVisible(it,gName){
   if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return false;
   return true;
 }
+// Return reason why an item is hidden (for display in muted rows)
+function _orderHideReason(it,gName){
+  if(ordersBudgetEnabled&&budgetSkipped.has(it.drugName))return "не вміщується в бюджет";
+  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return "фільтр VEN: "+ordersVenFilter;
+  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return "фільтр ABC: "+ordersAbcFilter;
+  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return "очікувані сховано";
+  return "";
+}
 // Count suppliers that have at least one visible item
 let visibleSupplierCount=0;
 let visibleItemsCount=0;
@@ -2296,16 +2304,17 @@ const visibleItems=g.items.filter(it=>_orderVisible(it,g.name));
 const visibleCost=visibleItems.reduce((s,it)=>s+(it.costEstimate||0),0);
 const skippedHere=g.items.length-visibleItems.length;
 if(visibleItems.length===0)continue; // whole supplier filtered out
-// Group items by contract
+// Group items by contract — include ALL (visible + hidden) so user can see what's filtered out
 const byContract={};
 for(let ii=0;ii<g.items.length;ii++){
   const it=g.items[ii];
-  if(!_orderVisible(it,g.name))continue;
+  const isHidden=!_orderVisible(it,g.name);
   const c=it.contract||"(без угоди)";
-  if(!byContract[c])byContract[c]={items:[],total:0,origIdx:[]};
+  if(!byContract[c])byContract[c]={items:[],total:0,origIdx:[],hidden:[]};
   byContract[c].items.push(it);
   byContract[c].origIdx.push(ii);
-  byContract[c].total+=(it.costEstimate||0);
+  byContract[c].hidden.push(isHidden);
+  if(!isHidden)byContract[c].total+=(it.costEstimate||0);
 }
 const contractNames=Object.keys(byContract);
 h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${gi})">`;
@@ -2334,8 +2343,13 @@ for(const cName of contractNames){
   for(let bIdx=0;bIdx<bucket.items.length;bIdx++){
     const it=bucket.items[bIdx];
     const ii=bucket.origIdx[bIdx];
+    const isHidden=bucket.hidden[bIdx];
+    const hideReason=isHidden?_orderHideReason(it,g.name):"";
     const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
-    h+=`<div class="agr-item" style="padding-bottom:10px">`;
+    h+=`<div class="agr-item" style="padding-bottom:10px${isHidden?";opacity:.45;background:rgba(255,255,255,.02);border-left:3px solid rgba(255,255,255,.15)":""}">`;
+    if(isHidden){
+      h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-style:italic">🚫 Не в замовленні · ${esc(hideReason)}</div>`;
+    }
     // Title row with VEN badge
     h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
     h+=`<span style="cursor:pointer" onclick="openVenPopup(${gi},${ii})" title="Клацни для зміни VEN категорії (ABC автоматично)">${comboBadge(it.drugName,it.mnn)}</span>`;
@@ -2898,8 +2912,8 @@ const ORDER_HEADER="Замовлення 1ТМО Львів, вул. Микол�
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
-// Apply budget filter
-const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+// Apply all active filters (budget/VEN/ABC/hidePending) — hidden items don't go into order text
+const visible=g.items.filter(it=>_orderVisible(it,g.name));
 if(!visible.length)return"";
 let txt=ORDER_HEADER+"\n\n";
 txt+=`Постачальник: ${g.name}\n\n`;
@@ -2965,7 +2979,7 @@ function exportOrderCSV(gi){
 if(event)event.stopPropagation();
 const g=(window._ordersGroups||[])[gi];
 if(!g)return;
-const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+const visible=g.items.filter(it=>_orderVisible(it,g.name));
 const rows=[["№","VEN","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
 let total=0;
 visible.forEach((it,i)=>{
@@ -2988,7 +3002,7 @@ function _shorterOrderText(gi){
   // Produce a compact version (no empty lines between items, no decorators)
   const g=(window._ordersGroups||[])[gi];
   if(!g)return"";
-  const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+  const visible=g.items.filter(it=>_orderVisible(it,g.name));
   if(!visible.length)return"";
   let txt=ORDER_HEADER+"\n\n";
   txt+=`Постачальник: ${g.name}\n\n`;
