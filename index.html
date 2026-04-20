@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v41";
+const CACHE_KEY = "tendertrack_v42";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1853,10 +1853,14 @@ function loadVen(){
   const m=loadKey("_manual");if(m)ordersManual=m||[];
   const p=loadKey("_pending");if(p)ordersPending=p||{};
   const q=loadKey("_qty");if(q)ordersQtyOverride=q||{};
+  const ex=loadKey("_excluded");if(ex)ordersExcluded=ex||{};
+  const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
 }
 function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}syncPushSoon()}
 function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}syncPushSoon()}
 function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
+function saveExcluded(){try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
+function saveSupplierChoice(){try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
 
 // ═══════ CLOUD SYNC ═══════
 // Збираємо весь user-state у один об'єкт для відправки
@@ -1866,6 +1870,8 @@ function collectUserState(){
     manual: ordersManual||[],
     pending: ordersPending||{},
     qty: ordersQtyOverride||{},
+    excluded: ordersExcluded||{},
+    supChoice: ordersSupplierChoice||{},
     _localTs: Date.now()
   };
 }
@@ -1876,6 +1882,8 @@ function applyUserState(s){
   if(Array.isArray(s.manual)){ordersManual=s.manual;try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
   if(s.pending&&typeof s.pending==="object"){ordersPending=s.pending;try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
   if(s.qty&&typeof s.qty==="object"){ordersQtyOverride=s.qty;try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
+  if(s.excluded&&typeof s.excluded==="object"){ordersExcluded=s.excluded;try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}}
+  if(s.supChoice&&typeof s.supChoice==="object"){ordersSupplierChoice=s.supChoice;try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}}
   return true;
 }
 // Debounced push — accumulates changes, sends ~2s after last edit
@@ -1908,7 +1916,7 @@ async function syncPull(silent){
     if(j.ok&&j.state){
       // Only apply if remote has content (avoid wiping fresh local with empty remote on first run)
       const s=j.state;
-      const hasContent=(s.ven&&Object.keys(s.ven).length)||(Array.isArray(s.manual)&&s.manual.length)||(s.pending&&Object.keys(s.pending).length)||(s.qty&&Object.keys(s.qty).length);
+      const hasContent=(s.ven&&Object.keys(s.ven).length)||(Array.isArray(s.manual)&&s.manual.length)||(s.pending&&Object.keys(s.pending).length)||(s.qty&&Object.keys(s.qty).length)||(s.excluded&&Object.keys(s.excluded).length)||(s.supChoice&&Object.keys(s.supChoice).length);
       if(hasContent)applyUserState(s);
       _syncStatus="ok";_syncLastTs=Date.now();
       updateSyncIndicator();
@@ -2864,6 +2872,7 @@ if(!it)return;
 const sn=it.allSuppliers[si];
 if(!sn)return;
 ordersSupplierChoice[it.drugName]=sn;
+saveSupplierChoice();
 render();
 }
 function excludeOrderItemByIdx(gi,ii){
@@ -2872,12 +2881,14 @@ if(!g)return;
 const it=g.items[ii];
 if(!it)return;
 ordersExcluded[it.drugName]=true;
+saveExcluded();
 render();
 }
 function includeOrderItemByIdx(ei){
 const name=(window._excludedList||[])[ei];
 if(!name)return;
 delete ordersExcluded[name];
+saveExcluded();
 render();
 }
 
