@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil</div>
+<div class="dev-credit">Developed by Ostap Khmil <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,10 +268,18 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v38";
+const CACHE_KEY = "tendertrack_v39";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
+
+// ═══════ CLOUD SYNC (Apps Script webhook) ═══════
+const SYNC_URL = "https://script.google.com/macros/s/AKfycbzK2mzhao90vCJ9INyfb67WtjwRMVT5Nh35_X9Ql-zehpavn8xaXTGuQDq3MZ049PgA/exec";
+const SYNC_KEY = "ostap_2026_liki";
+let _syncStatus = "idle";   // idle | uploading | downloading | ok | err
+let _syncTimer = null;
+let _syncLastTs = 0;         // last server timestamp we know about (ms)
+let _syncEnabled = true;     // можна вимкнути кнопкою
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -1822,6 +1830,7 @@ function setVen(drugName,cat){
   // "E" is default, but we still save explicitly so that E chosen by user over auto-V persists
   venCategories[drugName]=cat;
   try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
+  syncPushSoon();
 }
 function loadVen(){
   // Try new USER_KEY first; fall back to any old versioned key for migration
@@ -1842,9 +1851,98 @@ function loadVen(){
   const p=loadKey("_pending");if(p)ordersPending=p||{};
   const q=loadKey("_qty");if(q)ordersQtyOverride=q||{};
 }
-function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
-function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
-function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
+function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}syncPushSoon()}
+function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}syncPushSoon()}
+function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
+
+// ═══════ CLOUD SYNC ═══════
+// Збираємо весь user-state у один об'єкт для відправки
+function collectUserState(){
+  return {
+    ven: venCategories||{},
+    manual: ordersManual||[],
+    pending: ordersPending||{},
+    qty: ordersQtyOverride||{},
+    _localTs: Date.now()
+  };
+}
+// Застосовуємо state з сервера до локального стану і в localStorage
+function applyUserState(s){
+  if(!s||typeof s!=="object")return false;
+  if(s.ven&&typeof s.ven==="object"){venCategories=s.ven;try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}}
+  if(Array.isArray(s.manual)){ordersManual=s.manual;try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
+  if(s.pending&&typeof s.pending==="object"){ordersPending=s.pending;try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
+  if(s.qty&&typeof s.qty==="object"){ordersQtyOverride=s.qty;try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
+  return true;
+}
+// Debounced push — accumulates changes, sends ~2s after last edit
+function syncPushSoon(){
+  if(!_syncEnabled||!SYNC_URL)return;
+  if(_syncTimer)clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(syncPush,2000);
+}
+async function syncPush(){
+  if(!_syncEnabled||!SYNC_URL)return;
+  _syncStatus="uploading";updateSyncIndicator();
+  try{
+    const body={key:SYNC_KEY,state:collectUserState()};
+    // Apps Script doPost expects text/plain to avoid CORS preflight
+    const r=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"text/plain;charset=utf-8"}});
+    const j=await r.json();
+    if(j.ok){_syncStatus="ok";_syncLastTs=j.ts||Date.now()}
+    else{_syncStatus="err";console.warn("sync push:",j.error)}
+  }catch(e){_syncStatus="err";console.warn("sync push:",e)}
+  updateSyncIndicator();
+}
+async function syncPull(silent){
+  if(!_syncEnabled||!SYNC_URL)return false;
+  if(!silent){_syncStatus="downloading";updateSyncIndicator()}
+  try{
+    const r=await fetch(SYNC_URL+"?key="+encodeURIComponent(SYNC_KEY));
+    const j=await r.json();
+    if(j.ok&&j.state){
+      // Only apply if remote has content (avoid wiping fresh local with empty remote on first run)
+      const s=j.state;
+      const hasContent=(s.ven&&Object.keys(s.ven).length)||(Array.isArray(s.manual)&&s.manual.length)||(s.pending&&Object.keys(s.pending).length)||(s.qty&&Object.keys(s.qty).length);
+      if(hasContent)applyUserState(s);
+      _syncStatus="ok";_syncLastTs=Date.now();
+      updateSyncIndicator();
+      return true;
+    }else{_syncStatus="err";updateSyncIndicator();return false}
+  }catch(e){_syncStatus="err";updateSyncIndicator();console.warn("sync pull:",e);return false}
+}
+function updateSyncIndicator(){
+  const el=document.getElementById("sync-ind");
+  if(!el)return;
+  const icons={idle:"☁",uploading:"⬆",downloading:"⬇",ok:"✓",err:"⚠"};
+  const colors={idle:"var(--muted)",uploading:"#3b82f6",downloading:"#3b82f6",ok:"#10b981",err:"#ef4444"};
+  el.textContent=icons[_syncStatus]||"☁";
+  el.style.color=colors[_syncStatus]||"var(--muted)";
+  el.title="Синхронізація: "+_syncStatus;
+}
+// Manual: forcibly push local → cloud (overwrites remote)
+async function syncForcePush(){
+  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null}
+  await syncPush();
+  alert("Стан вивантажено в хмару");
+}
+// Manual: forcibly pull cloud → local (overwrites local)
+async function syncForcePull(){
+  const ok=confirm("Завантажити стан з хмари? Локальні незбережені зміни будуть перезаписані.");
+  if(!ok)return;
+  const r=await syncPull(false);
+  if(r){render();alert("Стан завантажено з хмари")}
+  else{alert("Не вдалось завантажити: "+_syncStatus)}
+}
+// Simple menu invoked from sync indicator click
+function syncMenu(){
+  const labels={idle:"очікує",uploading:"вивантаження...",downloading:"завантаження...",ok:"синхронізовано",err:"помилка"};
+  const st=labels[_syncStatus]||_syncStatus;
+  const ans=prompt("Синхронізація: "+st+"\n\n1 — Вивантажити зараз (ПК/телефон → хмара)\n2 — Завантажити з хмари (хмара → цей пристрій)\n3 — Вимкнути/увімкнути синхронізацію (зараз: "+(_syncEnabled?"увімкнено":"вимкнено")+")\n\nВведи цифру:");
+  if(ans==="1")syncForcePush();
+  else if(ans==="2")syncForcePull();
+  else if(ans==="3"){_syncEnabled=!_syncEnabled;updateSyncIndicator();alert("Синхронізація "+(_syncEnabled?"увімкнена":"вимкнена"))}
+}
 // Automatic VEN: WHO EML → V by default; user override takes precedence
 function getVen(drugName,mnn){
   // User override wins (even if user set to N for something in EML)
@@ -2674,6 +2772,7 @@ function resetVen(){
 if(!venPopupFor)return;
 delete venCategories[venPopupFor];
 try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
+syncPushSoon();
 venPopupFor=null;render();
 }
 function toggleBudget(checked){
@@ -3006,6 +3105,15 @@ loadVen();
 cleanupPending();
 cleanupPendingByIncome();
 showHome();
+// Pull cloud state in background; re-render if something changed
+syncPull(false).then(changed=>{
+  if(changed){
+    // re-run cleanups in case pulled pending needs trimming
+    cleanupPending();
+    cleanupPendingByIncome();
+    render();
+  }
+});
 })();
 </script>
 </body>
