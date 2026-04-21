@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v45";
+const CACHE_KEY = "tendertrack_v47";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -3078,33 +3078,60 @@ function _sendVia(gi,builder,label){
 
 function sendOrderViber(gi){
   if(event)event.stopPropagation();
-  _sendVia(gi,(t)=>`viber://forward?text=${t}`,"Viber");
-}
-function sendOrderTelegram(gi){
-  if(event)event.stopPropagation();
-  // Telegram share: t.me/share/url requires both url & text.
-  // Best UX: put the message as `url` param — Telegram will show it as the shared content.
-  // Short text goes in URL param because Telegram shows the "url" field prominently.
   const g=(window._ordersGroups||[])[gi];if(!g)return;
   const full=buildOrderText(gi);
   if(!full){alert("Нема що надсилати");return}
-  _copyToClipboardSilent(full);
-  // Telegram works better when whole message is in `url` param (text is a note)
-  const shortTxt=_shorterOrderText(gi);
-  const payload=encodeURIComponent(full).length>_MSG_MAX_URL?shortTxt:full;
-  window.open(`https://t.me/share/url?url=${encodeURIComponent(payload)}`,"_blank");
+  const copied=_copyToClipboardSilent(full);
+  // viber:// deep-link без параметра text — відкриває просто Viber
+  // з параметром text — часто обрізає довгі замовлення або поведінка залежить від платформи
+  // Чесніший підхід: скопіювати + відкрити Viber, користувач обирає чат і вставляє
+  window.open("viber://","_blank");
   setTimeout(()=>{
     const note=document.createElement("div");
-    note.textContent="📋 Повний текст скопійовано — вставте у Telegram через Ctrl+V";
-    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw";
+    note.textContent=copied?"📋 Текст замовлення скопійовано — відкрий потрібний чат у Viber і встав":"⚠ Не вдалось скопіювати — спробуй кнопку 'Копіювати' окремо";
+    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center";
     document.body.appendChild(note);
-    setTimeout(()=>note.remove(),4000);
+    setTimeout(()=>note.remove(),5000);
+  },200);
+}
+function sendOrderTelegram(gi){
+  if(event)event.stopPropagation();
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const full=buildOrderText(gi);
+  if(!full){alert("Нема що надсилати");return}
+  const copied=_copyToClipboardSilent(full);
+  // Telegram's t.me/share/url treats message as a URL and fails for plain text (especially long).
+  // Safer UX: copy to clipboard + open Telegram app, user pastes manually.
+  // tg:// scheme works on mobile but is blocked on desktop; web.telegram is universal.
+  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
+  const tgUrl=isMobile?"tg://":"https://web.telegram.org/";
+  window.open(tgUrl,"_blank");
+  setTimeout(()=>{
+    const note=document.createElement("div");
+    note.textContent=copied?"📋 Текст замовлення скопійовано — відкрий потрібний чат у Telegram і встав (Ctrl+V або утримуй палець)":"⚠ Не вдалось скопіювати — спробуй кнопку 'Копіювати' окремо";
+    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center";
+    document.body.appendChild(note);
+    setTimeout(()=>note.remove(),5000);
   },200);
 }
 function sendOrderWhatsApp(gi){
   if(event)event.stopPropagation();
-  // wa.me without phone → asks user to pick contact
-  _sendVia(gi,(t)=>`https://wa.me/?text=${t}`,"WhatsApp");
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const full=buildOrderText(gi);
+  if(!full){alert("Нема що надсилати");return}
+  const copied=_copyToClipboardSilent(full);
+  // wa.me без параметрів → відкриває головну WhatsApp Web / застосунок
+  // З ?text=... обрізає довгі тексти; безпечніше копіювати в буфер і дати користувачу вставити
+  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
+  const waUrl=isMobile?"whatsapp://":"https://web.whatsapp.com/";
+  window.open(waUrl,"_blank");
+  setTimeout(()=>{
+    const note=document.createElement("div");
+    note.textContent=copied?"📋 Текст замовлення скопійовано — відкрий потрібний чат у WhatsApp і встав":"⚠ Не вдалось скопіювати — спробуй кнопку 'Копіювати' окремо";
+    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center";
+    document.body.appendChild(note);
+    setTimeout(()=>note.remove(),5000);
+  },200);
 }
 
 function renderConflicts(el){
