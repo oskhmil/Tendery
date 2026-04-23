@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v47";
+const CACHE_KEY = "tendertrack_v48";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -3100,12 +3100,8 @@ function sendOrderTelegram(gi){
   const full=buildOrderText(gi);
   if(!full){alert("Нема що надсилати");return}
   const copied=_copyToClipboardSilent(full);
-  // Telegram's t.me/share/url treats message as a URL and fails for plain text (especially long).
-  // Safer UX: copy to clipboard + open Telegram app, user pastes manually.
-  // tg:// scheme works on mobile but is blocked on desktop; web.telegram is universal.
-  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
-  const tgUrl=isMobile?"tg://":"https://web.telegram.org/";
-  window.open(tgUrl,"_blank");
+  // t.me — універсальний URL що сам відкриває Telegram app на мобільному або web.telegram.org на десктопі
+  window.open("https://t.me/","_blank");
   setTimeout(()=>{
     const note=document.createElement("div");
     note.textContent=copied?"📋 Текст замовлення скопійовано — відкрий потрібний чат у Telegram і встав (Ctrl+V або утримуй палець)":"⚠ Не вдалось скопіювати — спробуй кнопку 'Копіювати' окремо";
@@ -3120,11 +3116,9 @@ function sendOrderWhatsApp(gi){
   const full=buildOrderText(gi);
   if(!full){alert("Нема що надсилати");return}
   const copied=_copyToClipboardSilent(full);
-  // wa.me без параметрів → відкриває головну WhatsApp Web / застосунок
-  // З ?text=... обрізає довгі тексти; безпечніше копіювати в буфер і дати користувачу вставити
-  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
-  const waUrl=isMobile?"whatsapp://":"https://web.whatsapp.com/";
-  window.open(waUrl,"_blank");
+  // wa.me без параметрів — універсальний URL який сам відкриває WhatsApp app на мобільному
+  // або WhatsApp Web на десктопі. Без ?text= — не обрізає довгі замовлення.
+  window.open("https://wa.me/","_blank");
   setTimeout(()=>{
     const note=document.createElement("div");
     note.textContent=copied?"📋 Текст замовлення скопійовано — відкрий потрібний чат у WhatsApp і встав":"⚠ Не вдалось скопіювати — спробуй кнопку 'Копіювати' окремо";
