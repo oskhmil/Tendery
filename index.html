@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v51";
+const CACHE_KEY = "tendertrack_v52";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -3078,28 +3078,7 @@ function _sendVia(gi,builder,label){
 
 function sendOrderViber(gi){
   if(event)event.stopPropagation();
-  const g=(window._ordersGroups||[])[gi];if(!g)return;
-  const full=buildOrderText(gi);
-  if(!full){alert("Нема що надсилати");return}
-  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
-  // CRITICAL: open deep-link BEFORE async clipboard — mobile browsers lose user-gesture
-  // permission after await and will block custom schemes.
-  if(isMobile){
-    // Android Chrome: viber:// alone is not recognized as app intent.
-    // viber://chat — opens Viber on the chats screen (user picks conversation)
-    location.href="viber://chat";
-  }else{
-    window.open("viber://","_blank");
-  }
-  // Copy after — doesn't matter if slightly delayed
-  const copied=_copyToClipboardSilent(full);
-  setTimeout(()=>{
-    const note=document.createElement("div");
-    note.textContent=copied?"📋 Текст скопійовано — встав у потрібний чат":"⚠ Не вдалось скопіювати — натисни 'Копіювати' окремо";
-    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center";
-    document.body.appendChild(note);
-    setTimeout(()=>note.remove(),5000);
-  },200);
+  _sendVia(gi,(t)=>`viber://forward?text=${t}`,"Viber");
 }
 function sendOrderTelegram(gi){
   if(event)event.stopPropagation();
@@ -3124,29 +3103,8 @@ function sendOrderTelegram(gi){
 }
 function sendOrderWhatsApp(gi){
   if(event)event.stopPropagation();
-  const g=(window._ordersGroups||[])[gi];if(!g)return;
-  const full=buildOrderText(gi);
-  if(!full){alert("Нема що надсилати");return}
-  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
-  const isAndroid=/Android/i.test(navigator.userAgent);
-  // Open BEFORE clipboard to preserve user gesture on mobile
-  if(isAndroid){
-    // Android Chrome: intent URL with S.browser_fallback_url reliably opens WhatsApp
-    location.href="intent://send/#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=https%3A%2F%2Fwa.me%2F;end";
-  }else if(isMobile){
-    // iOS: whatsapp:// scheme works directly
-    location.href="whatsapp://send";
-  }else{
-    window.open("https://web.whatsapp.com/","_blank");
-  }
-  const copied=_copyToClipboardSilent(full);
-  setTimeout(()=>{
-    const note=document.createElement("div");
-    note.textContent=copied?"📋 Текст скопійовано — встав у потрібний чат":"⚠ Не вдалось скопіювати — натисни 'Копіювати' окремо";
-    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center";
-    document.body.appendChild(note);
-    setTimeout(()=>note.remove(),5000);
-  },200);
+  // wa.me without phone → asks user to pick contact
+  _sendVia(gi,(t)=>`https://wa.me/?text=${t}`,"WhatsApp");
 }
 
 function renderConflicts(el){
