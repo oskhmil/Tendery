@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TenderTrack</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23166534'/><text x='50' y='55' text-anchor='middle' dominant-baseline='central' font-size='50' fill='%2322c55e'>TT</text></svg>">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23166534'/><text x='50' y='55' text-anchor='middle' dominant-baseline='central' font-size='50' fill='%2322c55e'>TT</text></svg>">
@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil</div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,18 +268,10 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v52";
+const CACHE_KEY = "tendertrack_v39";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
-
-// ═══════ CLOUD SYNC (Apps Script webhook) ═══════
-const SYNC_URL = "https://script.google.com/macros/s/AKfycbzK2mzhao90vCJ9INyfb67WtjwRMVT5Nh35_X9Ql-zehpavn8xaXTGuQDq3MZ049PgA/exec";
-const SYNC_KEY = "ostap_2026_liki";
-let _syncStatus = "idle";   // idle | uploading | downloading | ok | err
-let _syncTimer = null;
-let _syncLastTs = 0;         // last server timestamp we know about (ms)
-let _syncEnabled = true;     // можна вимкнути кнопкою
 
 // ═══════ STATE ═══════
 let allData=[], allTenders=[], overrides={};
@@ -1100,7 +1092,12 @@ if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStri
 if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
 if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
-let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
+let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}else if(pu==="пак"&&PACK_U.has(tuC)){
+// Edge case: 1С exports container-level qty as "пак" while tender uses "паков" for boxes-of-N.
+// Multiply by №N from tender name when present.
+const pkT=extractPk(t.commercial);
+if(pkT>1&&pkT<=1000){pk=pkT;cq=t.qty*pk}
+}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
 const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
 let tInfo=allTI;
 const ovEntry=isMulti?ov[p.name]:null;
@@ -1386,9 +1383,6 @@ document.getElementById("btn-upload").classList.toggle("hidden",!isPurchases);
 document.getElementById("btn-f6-refresh").classList.toggle("hidden",!isConsumption);
 document.getElementById("btn-f6-upload").classList.toggle("hidden",!isConsumption);
 updateNavBtns();
-// Don't touch search-area visibility if we're on home screen (showScreen owns it)
-const onHomeScreen=!document.getElementById("home-screen").classList.contains("hidden");
-if(onHomeScreen)return;
 // Unified sticky search — shown for monitor views; for orders too (пошук по постачальнику/назві)
 const pw=document.getElementById("pinned-wrap");
 const sw=document.getElementById("search-wrap");
@@ -1833,7 +1827,6 @@ function setVen(drugName,cat){
   // "E" is default, but we still save explicitly so that E chosen by user over auto-V persists
   venCategories[drugName]=cat;
   try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
-  syncPushSoon();
 }
 function loadVen(){
   // Try new USER_KEY first; fall back to any old versioned key for migration
@@ -1853,109 +1846,10 @@ function loadVen(){
   const m=loadKey("_manual");if(m)ordersManual=m||[];
   const p=loadKey("_pending");if(p)ordersPending=p||{};
   const q=loadKey("_qty");if(q)ordersQtyOverride=q||{};
-  const ex=loadKey("_excluded");if(ex)ordersExcluded=ex||{};
-  const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
 }
-function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}syncPushSoon()}
-function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}syncPushSoon()}
-function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
-function saveExcluded(){try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
-function saveSupplierChoice(){try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
-
-// ═══════ CLOUD SYNC ═══════
-// Збираємо весь user-state у один об'єкт для відправки
-function collectUserState(){
-  return {
-    ven: venCategories||{},
-    manual: ordersManual||[],
-    pending: ordersPending||{},
-    qty: ordersQtyOverride||{},
-    excluded: ordersExcluded||{},
-    supChoice: ordersSupplierChoice||{},
-    _localTs: Date.now()
-  };
-}
-// Застосовуємо state з сервера до локального стану і в localStorage
-function applyUserState(s){
-  if(!s||typeof s!=="object")return false;
-  if(s.ven&&typeof s.ven==="object"){venCategories=s.ven;try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}}
-  if(Array.isArray(s.manual)){ordersManual=s.manual;try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
-  if(s.pending&&typeof s.pending==="object"){ordersPending=s.pending;try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
-  if(s.qty&&typeof s.qty==="object"){ordersQtyOverride=s.qty;try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
-  if(s.excluded&&typeof s.excluded==="object"){ordersExcluded=s.excluded;try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}}
-  if(s.supChoice&&typeof s.supChoice==="object"){ordersSupplierChoice=s.supChoice;try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}}
-  return true;
-}
-// Debounced push — accumulates changes, sends ~2s after last edit
-function syncPushSoon(){
-  if(!_syncEnabled||!SYNC_URL)return;
-  if(_syncTimer)clearTimeout(_syncTimer);
-  _syncTimer=setTimeout(syncPush,2000);
-}
-async function syncPush(){
-  if(!_syncEnabled||!SYNC_URL)return;
-  _syncStatus="uploading";updateSyncIndicator();
-  try{
-    const body={key:SYNC_KEY,state:collectUserState()};
-    // Apps Script doPost expects text/plain to avoid CORS preflight
-    const r=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"text/plain;charset=utf-8"}});
-    const j=await r.json();
-    if(j.ok){_syncStatus="ok";_syncLastTs=j.ts||Date.now()}
-    else{_syncStatus="err";console.warn("sync push:",j.error)}
-  }catch(e){_syncStatus="err";console.warn("sync push:",e)}
-  updateSyncIndicator();
-}
-async function syncPull(silent){
-  if(!_syncEnabled||!SYNC_URL)return false;
-  if(!silent){_syncStatus="downloading";updateSyncIndicator()}
-  try{
-    // POST with action:"read" — avoids CORS preflight (text/plain body)
-    const body={key:SYNC_KEY,action:"read"};
-    const r=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"text/plain;charset=utf-8"}});
-    const j=await r.json();
-    if(j.ok&&j.state){
-      // Only apply if remote has content (avoid wiping fresh local with empty remote on first run)
-      const s=j.state;
-      const hasContent=(s.ven&&Object.keys(s.ven).length)||(Array.isArray(s.manual)&&s.manual.length)||(s.pending&&Object.keys(s.pending).length)||(s.qty&&Object.keys(s.qty).length)||(s.excluded&&Object.keys(s.excluded).length)||(s.supChoice&&Object.keys(s.supChoice).length);
-      if(hasContent)applyUserState(s);
-      _syncStatus="ok";_syncLastTs=Date.now();
-      updateSyncIndicator();
-      return true;
-    }else{_syncStatus="err";updateSyncIndicator();return false}
-  }catch(e){_syncStatus="err";updateSyncIndicator();console.warn("sync pull:",e);return false}
-}
-function updateSyncIndicator(){
-  const el=document.getElementById("sync-ind");
-  if(!el)return;
-  const icons={idle:"☁",uploading:"⬆",downloading:"⬇",ok:"✓",err:"⚠"};
-  const colors={idle:"var(--muted)",uploading:"#3b82f6",downloading:"#3b82f6",ok:"#10b981",err:"#ef4444"};
-  el.textContent=icons[_syncStatus]||"☁";
-  el.style.color=colors[_syncStatus]||"var(--muted)";
-  el.title="Синхронізація: "+_syncStatus;
-}
-// Manual: forcibly push local → cloud (overwrites remote)
-async function syncForcePush(){
-  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null}
-  await syncPush();
-  alert("Стан вивантажено в хмару");
-}
-// Manual: forcibly pull cloud → local (overwrites local)
-async function syncForcePull(){
-  const ok=confirm("Завантажити стан з хмари? Локальні незбережені зміни будуть перезаписані.");
-  if(!ok)return;
-  const r=await syncPull(false);
-  if(r){render();alert("Стан завантажено з хмари")}
-  else{alert("Не вдалось завантажити: "+_syncStatus)}
-}
-// Simple menu invoked from sync indicator click
-function syncMenu(){
-  const labels={idle:"очікує",uploading:"вивантаження...",downloading:"завантаження...",ok:"синхронізовано",err:"помилка"};
-  const st=labels[_syncStatus]||_syncStatus;
-  const ans=prompt("Синхронізація: "+st+"\n\n1 — Вивантажити зараз (ПК/телефон → хмара)\n2 — Завантажити з хмари (хмара → цей пристрій)\n3 — Вимкнути/увімкнути синхронізацію (зараз: "+(_syncEnabled?"увімкнено":"вимкнено")+")\n\nВведи цифру:");
-  if(ans==="1")syncForcePush();
-  else if(ans==="2")syncForcePull();
-  else if(ans==="3"){_syncEnabled=!_syncEnabled;updateSyncIndicator();alert("Синхронізація "+(_syncEnabled?"увімкнена":"вимкнена"))}
-}
+function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
+function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
+function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
 // Automatic VEN: WHO EML → V by default; user override takes precedence
 function getVen(drugName,mnn){
   // User override wins (even if user set to N for something in EML)
@@ -2137,25 +2031,6 @@ const supplierOrders=Object.values(bySupplierGroup).sort((a,b)=>a.name.localeCom
 return{lines,noMatch,noTender,supplierOrders,needPurchases:allData.length===0};
 }
 
-// Unified visibility predicate — GLOBAL so that buildOrderText/exportOrderCSV/sendOrder* can call it
-// budgetSkipped is cached on window._budgetSkipped during renderOrders()
-function _orderVisible(it,gName){
-  const bs=window._budgetSkipped;
-  if(ordersBudgetEnabled&&bs&&bs.has&&bs.has(it.drugName))return false;
-  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return false;
-  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return false;
-  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return false;
-  return true;
-}
-function _orderHideReason(it,gName){
-  const bs=window._budgetSkipped;
-  if(ordersBudgetEnabled&&bs&&bs.has&&bs.has(it.drugName))return "не вміщується в бюджет";
-  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return "фільтр VEN: "+ordersVenFilter;
-  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return "фільтр ABC: "+ordersAbcFilter;
-  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return "очікувані сховано";
-  return "";
-}
-
 function renderOrders(el){
 // Gate: need F6 at minimum
 if(!f6Months.length){
@@ -2235,9 +2110,14 @@ const pendingCount=Object.keys(ordersPending).length;
 if(pendingCount)h+=`<button class="exp-btn" style="background:rgba(139,92,246,.15);border-color:#8b5cf6;color:#c4b5fd" onclick="openPendingDialog()">⏳ Очікується: <strong>${pendingCount}</strong></button>`;
 h+='</div>';
 
-// Cache budgetSkipped on window so _orderVisible (global) can access it
-window._budgetSkipped=budgetSkipped;
-
+// Unified visibility predicate — defined early so summary counts respect filters
+function _orderVisible(it,gName){
+  if(ordersBudgetEnabled&&budgetSkipped.has(it.drugName))return false;
+  if(ordersVenFilter!=="all"&&it.ven!==ordersVenFilter)return false;
+  if(ordersAbcFilter!=="all"&&it.abc!==ordersAbcFilter)return false;
+  if(ordersHidePending&&ordersPending[it.drugName+"|"+gName])return false;
+  return true;
+}
 // Count suppliers that have at least one visible item
 let visibleSupplierCount=0;
 let visibleItemsCount=0;
@@ -2310,17 +2190,16 @@ const visibleItems=g.items.filter(it=>_orderVisible(it,g.name));
 const visibleCost=visibleItems.reduce((s,it)=>s+(it.costEstimate||0),0);
 const skippedHere=g.items.length-visibleItems.length;
 if(visibleItems.length===0)continue; // whole supplier filtered out
-// Group items by contract — include ALL (visible + hidden) so user can see what's filtered out
+// Group items by contract
 const byContract={};
 for(let ii=0;ii<g.items.length;ii++){
   const it=g.items[ii];
-  const isHidden=!_orderVisible(it,g.name);
+  if(!_orderVisible(it,g.name))continue;
   const c=it.contract||"(без угоди)";
-  if(!byContract[c])byContract[c]={items:[],total:0,origIdx:[],hidden:[]};
+  if(!byContract[c])byContract[c]={items:[],total:0,origIdx:[]};
   byContract[c].items.push(it);
   byContract[c].origIdx.push(ii);
-  byContract[c].hidden.push(isHidden);
-  if(!isHidden)byContract[c].total+=(it.costEstimate||0);
+  byContract[c].total+=(it.costEstimate||0);
 }
 const contractNames=Object.keys(byContract);
 h+=`<div class="agr-card${isExp?" expanded":""}" onclick="toggleOrderSupplier(${gi})">`;
@@ -2349,13 +2228,8 @@ for(const cName of contractNames){
   for(let bIdx=0;bIdx<bucket.items.length;bIdx++){
     const it=bucket.items[bIdx];
     const ii=bucket.origIdx[bIdx];
-    const isHidden=bucket.hidden[bIdx];
-    const hideReason=isHidden?_orderHideReason(it,g.name):"";
     const hasAlts=it.altSuppliers&&it.altSuppliers.length>0;
-    h+=`<div class="agr-item" style="padding-bottom:10px${isHidden?";opacity:.45;background:rgba(255,255,255,.02);border-left:3px solid rgba(255,255,255,.15)":""}">`;
-    if(isHidden){
-      h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-style:italic">🚫 Не в замовленні · ${esc(hideReason)}</div>`;
-    }
+    h+=`<div class="agr-item" style="padding-bottom:10px">`;
     // Title row with VEN badge
     h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
     h+=`<span style="cursor:pointer" onclick="openVenPopup(${gi},${ii})" title="Клацни для зміни VEN категорії (ABC автоматично)">${comboBadge(it.drugName,it.mnn)}</span>`;
@@ -2805,7 +2679,6 @@ function resetVen(){
 if(!venPopupFor)return;
 delete venCategories[venPopupFor];
 try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
-syncPushSoon();
 venPopupFor=null;render();
 }
 function toggleBudget(checked){
@@ -2892,7 +2765,6 @@ if(!it)return;
 const sn=it.allSuppliers[si];
 if(!sn)return;
 ordersSupplierChoice[it.drugName]=sn;
-saveSupplierChoice();
 render();
 }
 function excludeOrderItemByIdx(gi,ii){
@@ -2901,14 +2773,12 @@ if(!g)return;
 const it=g.items[ii];
 if(!it)return;
 ordersExcluded[it.drugName]=true;
-saveExcluded();
 render();
 }
 function includeOrderItemByIdx(ei){
 const name=(window._excludedList||[])[ei];
 if(!name)return;
 delete ordersExcluded[name];
-saveExcluded();
 render();
 }
 
@@ -2918,8 +2788,8 @@ const ORDER_HEADER="Замовлення 1ТМО Львів, вул. Микол�
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
-// Apply all active filters (budget/VEN/ABC/hidePending) — hidden items don't go into order text
-const visible=g.items.filter(it=>_orderVisible(it,g.name));
+// Apply budget filter
+const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
 if(!visible.length)return"";
 let txt=ORDER_HEADER+"\n\n";
 txt+=`Постачальник: ${g.name}\n\n`;
@@ -2985,7 +2855,7 @@ function exportOrderCSV(gi){
 if(event)event.stopPropagation();
 const g=(window._ordersGroups||[])[gi];
 if(!g)return;
-const visible=g.items.filter(it=>_orderVisible(it,g.name));
+const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
 const rows=[["№","VEN","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
 let total=0;
 visible.forEach((it,i)=>{
@@ -3008,7 +2878,7 @@ function _shorterOrderText(gi){
   // Produce a compact version (no empty lines between items, no decorators)
   const g=(window._ordersGroups||[])[gi];
   if(!g)return"";
-  const visible=g.items.filter(it=>_orderVisible(it,g.name));
+  const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
   if(!visible.length)return"";
   let txt=ORDER_HEADER+"\n\n";
   txt+=`Постачальник: ${g.name}\n\n`;
@@ -3082,23 +2952,23 @@ function sendOrderViber(gi){
 }
 function sendOrderTelegram(gi){
   if(event)event.stopPropagation();
+  // Telegram share: t.me/share/url requires both url & text.
+  // Best UX: put the message as `url` param — Telegram will show it as the shared content.
+  // Short text goes in URL param because Telegram shows the "url" field prominently.
   const g=(window._ordersGroups||[])[gi];if(!g)return;
   const full=buildOrderText(gi);
   if(!full){alert("Нема що надсилати");return}
-  const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
-  // Open BEFORE clipboard to preserve user gesture on mobile
-  if(isMobile){
-    location.href="tg://";
-  }else{
-    window.open("https://web.telegram.org/","_blank");
-  }
-  const copied=_copyToClipboardSilent(full);
+  _copyToClipboardSilent(full);
+  // Telegram works better when whole message is in `url` param (text is a note)
+  const shortTxt=_shorterOrderText(gi);
+  const payload=encodeURIComponent(full).length>_MSG_MAX_URL?shortTxt:full;
+  window.open(`https://t.me/share/url?url=${encodeURIComponent(payload)}`,"_blank");
   setTimeout(()=>{
     const note=document.createElement("div");
-    note.textContent=copied?"📋 Текст скопійовано — встав у потрібний чат":"⚠ Не вдалось скопіювати — натисни 'Копіювати' окремо";
-    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw;text-align:center";
+    note.textContent="📋 Повний текст скопійовано — вставте у Telegram через Ctrl+V";
+    note.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(20,24,30,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;color:#fff;font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:92vw";
     document.body.appendChild(note);
-    setTimeout(()=>note.remove(),5000);
+    setTimeout(()=>note.remove(),4000);
   },200);
 }
 function sendOrderWhatsApp(gi){
@@ -3141,26 +3011,6 @@ loadVen();
 cleanupPending();
 cleanupPendingByIncome();
 showHome();
-// Pull cloud state in background; re-render if something changed
-syncPull(false).then(changed=>{
-  if(changed){
-    // re-run cleanups in case pulled pending needs trimming
-    cleanupPending();
-    cleanupPendingByIncome();
-    render();
-  }
-});
-// Auto-pull when tab becomes visible again (e.g. user switches back from another tab/app).
-// Cheap, battery-friendly — no polling. Throttled: minimum 10 sec between pulls.
-let _lastVisPull=Date.now();
-document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState!=="visible")return;
-  if(Date.now()-_lastVisPull<10000)return;
-  _lastVisPull=Date.now();
-  syncPull(true).then(changed=>{
-    if(changed){cleanupPending();cleanupPendingByIncome();render()}
-  });
-});
 })();
 </script>
 </body>
