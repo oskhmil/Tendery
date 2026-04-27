@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v42";
+const CACHE_KEY = "tendertrack_v44";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -2306,9 +2306,14 @@ for(const cName of contractNames){
         const daysSince=Math.floor((Date.now()-d.getTime())/(24*60*60*1000));
         const daysLeft=PENDING_EXPIRE_DAYS-daysSince;
         info=` ${d.toLocaleDateString("uk-UA")} (${daysSince}д тому)`;
-        // F6 tracking status
-        const f6Info=p.f6Name?"відстеж. за Формою 6":"авто-зняття за "+(daysLeft>0?daysLeft+"д":"скоро");
-        info+=` · ${f6Info}`;
+        // F6 tracking: show progress if expectedQty was saved
+        if(p.expectedQty&&p.f6Name){
+          const cur=totalIncomeForDrug(p.f6Name);
+          const delta=Math.max(0,cur-(p.incomeAtMark||0));
+          info+=` · надійшло ${delta}/${p.expectedQty} ${esc(it.f6Unit||"")}`;
+        }else{
+          info+=` · авто-зняття за ${daysLeft>0?daysLeft+"д":"скоро"}`;
+        }
       }
       h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(139,92,246,.08);border-left:3px solid #8b5cf6;border-radius:4px;font-size:10px;color:#c4b5fd">✓ Замовлено${info}</div>`;
     }
@@ -2397,7 +2402,14 @@ function buildPendingDialog(){
       h+=`<div style="font-size:10px;color:var(--accent)">Постачальник: ${esc(p.supplier||"?")}</div>`;
       h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">`;
       if(d)h+=`${d.toLocaleDateString("uk-UA")} (${daysSince}д тому)`;
-      h+=` · ${p.f6Name?"відстеж. за Формою 6":`авто-зняття за ${daysLeft>0?daysLeft+"д":"скоро"}`}`;
+      // F6 tracking progress if available
+      if(p.expectedQty&&p.f6Name){
+        const cur=totalIncomeForDrug(p.f6Name);
+        const delta=Math.max(0,cur-(p.incomeAtMark||0));
+        h+=` · надійшло <strong>${delta}/${p.expectedQty}</strong>`;
+      }else{
+        h+=` · авто-зняття за ${daysLeft>0?daysLeft+"д":"скоро"}`;
+      }
       h+=`</div>`;
       h+=`</div>`;
       h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger);flex-shrink:0" onclick="removePending('${key.replace(/'/g,"&#39;")}')">✕</button>`;
@@ -2519,8 +2531,10 @@ function resolveF6Name(drugName){
   return null;
 }
 
-// Auto-remove "pending" flags when F6 shows new income since the mark was set.
-// Important: don't run if F6 isn't loaded yet — would falsely match against zero income.
+// Auto-remove "pending" flags when F6 shows enough new income to cover the expected delivery.
+// Threshold: income must grow by >= expectedQty (the qty user ordered).
+// If only partial delivery — pending stays, and buildOrders will recompute deficit
+// from the new lower remaining need automatically.
 function cleanupPendingByIncome(){
   if(!f6Months||!f6Months.length){console.log("[TenderTrack] cleanupPendingByIncome: skipped (no F6)");return}
   let changed=false;
@@ -2528,11 +2542,14 @@ function cleanupPendingByIncome(){
   for(const key of Object.keys(ordersPending)){
     const p=ordersPending[key];
     if(!p||p.incomeAtMark==null)continue;
-    const f6n=resolveF6Name(p.drugName);
+    // Old marks without expectedQty: be conservative, never auto-remove (only manual / 30d)
+    if(p.expectedQty==null||p.expectedQty<=0)continue;
+    const f6n=p.f6Name||resolveF6Name(p.drugName);
     if(!f6n)continue;
     const currentIncome=totalIncomeForDrug(f6n);
-    if(currentIncome>=p.incomeAtMark+1){
-      removed.push(p.drugName+" (income "+p.incomeAtMark+"→"+currentIncome+")");
+    const delta=currentIncome-p.incomeAtMark;
+    if(delta>=p.expectedQty){
+      removed.push(p.drugName+" (income +"+delta+" >= expected "+p.expectedQty+")");
       delete ordersPending[key];
       changed=true;
     }
@@ -2547,14 +2564,17 @@ function togglePending(gi,ii,checked){
   const it=g.items[ii];if(!it)return;
   const key=it.drugName+"|"+g.name;
   if(checked){
-    // Snapshot the current F6 total income; if it grows later → auto-remove
+    // Snapshot: F6 income at mark + expected delivery qty (in F6 units).
+    // Pending auto-removes only when income grows by >= expectedQty.
     const f6n=resolveF6Name(it.drugName);
     const incomeAtMark=f6n?totalIncomeForDrug(f6n):0;
+    const expectedQty=it.qtyInPurchaseUnits||(it.packsToOrder*(it.pk||1))||0;
     ordersPending[key]={
       ts:new Date().toISOString(),
       drugName:it.drugName,
       supplier:g.name,
       incomeAtMark,
+      expectedQty,
       f6Name:f6n||null,
     };
   }else{
