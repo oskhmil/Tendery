@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v39";
+const CACHE_KEY = "tendertrack_v40";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1069,7 +1069,15 @@ function getVolumes(s){const u=s.toUpperCase().replace(/\u00a0/g," "),v=new Set(
 function tokMatch(pt,tt){if(!pt.length||!tt.length)return false;const p0=pt[0],t0=tt[0];if(p0===t0)return true;const pp=p0.split("-"),tp=t0.split("-");if((pp.length>1||tp.length>1)&&pp[0]===tp[0]&&pp[0].length>=4)return true;if(p0.length>=6&&t0.startsWith(p0))return true;if(t0.length>=6&&p0.startsWith(t0))return true;const ps=stemUk(p0),ts=stemUk(t0);if(ps===ts&&ps.length>=5)return true;if(ps.length>=5&&ts.startsWith(ps))return true;if(ts.length>=5&&ps.startsWith(ts))return true;if(pp.length>1||tp.length>1){const pps=stemUk(pp[0]),tps=stemUk(tp[0]);if(pps===tps&&pps.length>=4)return true;if(pps.length>=5&&tps.startsWith(pps))return true;if(tps.length>=5&&pps.startsWith(tps))return true}const pn=p0.replace(/И/g,"І"),tn=t0.replace(/И/g,"І");if(pn===tn&&pn.length>=4)return true;if(pn.length>=6&&tn.startsWith(pn))return true;if(tn.length>=6&&pn.startsWith(tn))return true;if(pt.length>=2){const c=pt.slice(0,2).join("-");if(c===t0)return true}if(tt.length>=2){const c=tt.slice(0,2).join("-");if(c===p0)return true}return false}
 function setsOverlap(a,b){for(const x of a)if(b.has(x))return true;return false}
 const CF=new Set(["SOL","INF","PWD"]);function formsOk(pF,tF){if(!pF.size||!tF.size)return true;if(setsOverlap(pF,tF))return true;return[...pF].some(f=>CF.has(f))&&[...tF].some(f=>CF.has(f))}
-function extractPk(n){const m=n.match(/[№#N]\s*(\d+)/);return m?parseInt(m[1]):1}
+function extractPk(n){
+  // Find ALL №N occurrences and take the LAST one — pack-size is conventionally
+  // the last №N in the description (e.g. "Олімель №7E 1500 мл №4" → 4, not 7;
+  // "Анальгін 500 мг №10" → 10).
+  const re=/[№#N]\s*(\d+)/g;
+  let m,last=null;
+  while((m=re.exec(n))!==null)last=m;
+  return last?parseInt(last[1]):1;
+}
 const PACK_U=new Set(["упк","уп","пач","пак","паков","пачка","упак","упак."]);
 const SINGLE_U=new Set(["ампул","капс","капс.","таб","конт","флак","шпр","пляш","шт","штуки","туб","каністр","компл","пар"]);
 const T_SINGLE=new Set(["шпр","шприц","фл","фл.","флак","флакон","флк","амп","ампул","ампула","пляш","пляшка","саше","таб","табл","капс","капе","контейнер","штука","туб","супп","кан."]);
