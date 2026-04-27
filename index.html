@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v54";
+const CACHE_KEY = "tendertrack_v55";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -305,7 +305,8 @@ let f6MonthsEnabled=null;  // null=all enabled; array of booleans otherwise
 // Замовлення state
 let ordersHorizon=30;                  // days to cover
 let ordersSupplierChoice={};           // {drugName: "supplierName"}
-let ordersExcluded={};                 // {drugName: true} — exclude from orders
+let ordersExcluded={};                 // {drugName: true} — exclude from orders entirely (removed from calculation)
+let ordersHidden={};                   // {drugName|supplier: true} — hide from output text/csv but keep visible in UI
 let ordersSearch="";
 let ordersExpandedSupplier=null;
 
@@ -1862,12 +1863,14 @@ function loadVen(){
   const p=loadKey("_pending");if(p)ordersPending=p||{};
   const q=loadKey("_qty");if(q)ordersQtyOverride=q||{};
   const ex=loadKey("_excluded");if(ex)ordersExcluded=ex||{};
+  const hd=loadKey("_hidden");if(hd)ordersHidden=hd||{};
   const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
 }
 function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}syncPushSoon()}
 function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}syncPushSoon()}
 function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
 function saveExcluded(){try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
+function saveHidden(){try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}syncPushSoon()}
 function saveSupplierChoice(){try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
 
 // ═══════ CLOUD SYNC ═══════
@@ -1879,6 +1882,7 @@ function collectUserState(){
     pending: ordersPending||{},
     qty: ordersQtyOverride||{},
     excluded: ordersExcluded||{},
+    hidden: ordersHidden||{},
     supChoice: ordersSupplierChoice||{},
     _localTs: Date.now()
   };
@@ -1891,6 +1895,7 @@ function applyUserState(s){
   if(s.pending&&typeof s.pending==="object"){ordersPending=s.pending;try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
   if(s.qty&&typeof s.qty==="object"){ordersQtyOverride=s.qty;try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
   if(s.excluded&&typeof s.excluded==="object"){ordersExcluded=s.excluded;try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}}
+  if(s.hidden&&typeof s.hidden==="object"){ordersHidden=s.hidden;try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}}
   if(s.supChoice&&typeof s.supChoice==="object"){ordersSupplierChoice=s.supChoice;try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}}
   return true;
 }
@@ -2370,6 +2375,7 @@ for(const cName of contractNames){
     if(it.manual)h+='<span style="font-size:10px;color:#60a5fa;background:rgba(59,130,246,.15);padding:1px 5px;border-radius:4px" title="Додано вручну">✋ вручну</span>';
     const _pKey=it.drugName+"|"+g.name;
     if(ordersPending[_pKey])h+='<span style="font-size:10px;color:#c4b5fd;background:rgba(139,92,246,.15);padding:1px 5px;border-radius:4px" title="Вже замовлено, очікується доставка">⏳ очікується</span>';
+    if(ordersHidden[_pKey])h+='<span style="font-size:10px;color:#fbbf24;background:rgba(245,158,11,.15);padding:1px 5px;border-radius:4px" title="Приховано з замовлення — не йде у TG/Viber/Email/CSV">🚫 приховано</span>';
     if(it.emlCandidate)h+='<span style="font-size:10px;color:#86efac;background:rgba(34,197,94,.12);padding:1px 5px;border-radius:4px" title="Цей препарат у WHO EML (Essential Medicines List) — можливо, варто позначити V">⚡WHO EML</span>';
     h+=`<span class="name" style="flex:1">${hlPlain(it.drugName,q)}</span>`;
     h+='</div>';
@@ -2409,13 +2415,18 @@ for(const cName of contractNames){
       }
       h+='</div>';
     }
-    // Pending + actions row
+    // Pending + Hide + actions row
     const pKey=it.drugName+"|"+g.name;
     const isPending=!!ordersPending[pKey];
+    const isUserHidden=!!ordersHidden[pKey];
     h+='<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     h+=`<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;padding:4px 8px;border-radius:6px;background:${isPending?"rgba(139,92,246,.18)":"rgba(255,255,255,.04)"};border:1px solid ${isPending?"#8b5cf6":"rgba(255,255,255,.1)"};color:${isPending?"#c4b5fd":"var(--muted)"}">`;
     h+=`<input type="checkbox" ${isPending?"checked":""} onchange="togglePending(${gi},${ii},this.checked)" onclick="event.stopPropagation()" style="accent-color:#8b5cf6">`;
     h+=isPending?"⏳ Замовлено, очікується":"⏳ Позначити як очікується";
+    h+='</label>';
+    h+=`<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;padding:4px 8px;border-radius:6px;background:${isUserHidden?"rgba(245,158,11,.18)":"rgba(255,255,255,.04)"};border:1px solid ${isUserHidden?"#f59e0b":"rgba(255,255,255,.1)"};color:${isUserHidden?"#fbbf24":"var(--muted)"}">`;
+    h+=`<input type="checkbox" ${isUserHidden?"checked":""} onchange="toggleHidden(${gi},${ii},this.checked)" onclick="event.stopPropagation()" style="accent-color:#f59e0b">`;
+    h+=isUserHidden?"🚫 Приховано з замовлення":"🚫 Приховати з замовлення";
     h+='</label>';
     if(it.manual){
       h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger)" onclick="removeManual(${JSON.stringify(it.manualId).replace(/"/g,'&quot;')})">🗑 Видалити вручну</button>`;
@@ -2681,6 +2692,15 @@ function togglePending(gi,ii,checked){
   }
   savePending();render();
 }
+function toggleHidden(gi,ii,checked){
+  if(event)event.stopPropagation();
+  const g=(window._ordersGroups||[])[gi];if(!g)return;
+  const it=g.items[ii];if(!it)return;
+  const key=it.drugName+"|"+g.name;
+  if(checked)ordersHidden[key]=true;
+  else delete ordersHidden[key];
+  saveHidden();render();
+}
 function _renderAddResults(){
   const q=(ordersAddQuery||"").trim().toLowerCase();
   if(!allTenders||!allTenders.length)return'<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Дані тендерів ще завантажуються...</div>';
@@ -2926,10 +2946,10 @@ const ORDER_HEADER="Замовлення 1ТМО Львів, вул. Микол�
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
-// Apply all active filters (budget/VEN/ABC) + ALWAYS exclude pending (already-placed)
+// Apply all active filters (budget/VEN/ABC). Hidden items always excluded from output.
 const visible=g.items.filter(it=>{
   if(!_orderVisible(it,g.name))return false;
-  if(ordersPending[it.drugName+"|"+g.name])return false;
+  if(ordersHidden[it.drugName+"|"+g.name])return false;
   return true;
 });
 if(!visible.length)return"";
@@ -2999,7 +3019,7 @@ const g=(window._ordersGroups||[])[gi];
 if(!g)return;
 const visible=g.items.filter(it=>{
   if(!_orderVisible(it,g.name))return false;
-  if(ordersPending[it.drugName+"|"+g.name])return false;
+  if(ordersHidden[it.drugName+"|"+g.name])return false;
   return true;
 });
 const rows=[["№","VEN","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
@@ -3026,7 +3046,7 @@ function _shorterOrderText(gi){
   if(!g)return"";
   const visible=g.items.filter(it=>{
     if(!_orderVisible(it,g.name))return false;
-    if(ordersPending[it.drugName+"|"+g.name])return false;
+    if(ordersHidden[it.drugName+"|"+g.name])return false;
     return true;
   });
   if(!visible.length)return"";
