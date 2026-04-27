@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v40";
+const CACHE_KEY = "tendertrack_v41";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -2796,8 +2796,12 @@ const ORDER_HEADER="Замовлення 1ТМО Львів, вул. Микол�
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
-// Apply budget filter
-const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+// Apply budget filter + exclude pending (already-placed) items
+const visible=g.items.filter(it=>{
+  if(ordersBudgetEnabled&&_isBudgetSkipped(it))return false;
+  if(ordersPending[it.drugName+"|"+g.name])return false;
+  return true;
+});
 if(!visible.length)return"";
 let txt=ORDER_HEADER+"\n\n";
 txt+=`Постачальник: ${g.name}\n\n`;
@@ -2863,7 +2867,11 @@ function exportOrderCSV(gi){
 if(event)event.stopPropagation();
 const g=(window._ordersGroups||[])[gi];
 if(!g)return;
-const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+const visible=g.items.filter(it=>{
+  if(ordersBudgetEnabled&&_isBudgetSkipped(it))return false;
+  if(ordersPending[it.drugName+"|"+g.name])return false;
+  return true;
+});
 const rows=[["№","VEN","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
 let total=0;
 visible.forEach((it,i)=>{
@@ -2886,7 +2894,11 @@ function _shorterOrderText(gi){
   // Produce a compact version (no empty lines between items, no decorators)
   const g=(window._ordersGroups||[])[gi];
   if(!g)return"";
-  const visible=g.items.filter(it=>!ordersBudgetEnabled||!_isBudgetSkipped(it));
+  const visible=g.items.filter(it=>{
+    if(ordersBudgetEnabled&&_isBudgetSkipped(it))return false;
+    if(ordersPending[it.drugName+"|"+g.name])return false;
+    return true;
+  });
   if(!visible.length)return"";
   let txt=ORDER_HEADER+"\n\n";
   txt+=`Постачальник: ${g.name}\n\n`;
