@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v44";
+const CACHE_KEY = "tendertrack_v45";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -2265,7 +2265,7 @@ for(const cName of contractNames){
     }
     // Warnings for over-ordering
     if(it.packsToOrder>it.packsNeeded){
-      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(59,130,246,.1);border-left:3px solid var(--blue);border-radius:4px;font-size:11px;color:#93c5fd">ℹ️ Замовлено понад дефіцит: +${it.packsToOrder-it.packsNeeded} ${esc(it.packUnit)} про запас</div>`;
+      h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(59,130,246,.1);border-left:3px solid var(--blue);border-radius:4px;font-size:11px;color:#93c5fd">ℹ️ Понад потребу: +${it.packsToOrder-it.packsNeeded} ${esc(it.packUnit)} про запас</div>`;
     }
     if(it.packsToOrder>it.packsAvailable){
       const over=it.packsToOrder-it.packsAvailable;
