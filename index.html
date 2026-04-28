@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v55";
+const CACHE_KEY = "tendertrack_v56";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1136,6 +1136,10 @@ else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
 }
 const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
 if(isAlloc){
+// Calculate total qty assigned via Розподіл and compare with real purchases
+const totalAlloc=Object.keys(ovEntry).reduce((s,sup)=>s+(ovEntry[sup]||0),0);
+const allocMissing=Math.max(0,p.qty-totalAlloc);  // unallocated purchases
+const allocExcess=Math.max(0,totalAlloc-p.qty);   // allocation > real purchases
 for(const sup of Object.keys(ovEntry)){
 const supQty=ovEntry[sup]||0;
 const supTenders=allTI.filter(t=>t.s===sup);
@@ -1149,7 +1153,8 @@ const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
 const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
 let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
 if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
+results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry,
+realQty:p.qty,totalAlloc,allocMissing,allocExcess});
 }
 for(const sup of uSup){
 if(ovEntry[sup]!==undefined)continue;
@@ -1158,7 +1163,8 @@ if(!supTenders.length)continue;
 const stq=supTenders.reduce((s,t)=>s+t.cq,0);
 let sdu=p.unit,sdtq=stq;
 if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
-results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry});
+results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry,
+realQty:p.qty,totalAlloc,allocMissing,allocExcess});
 }
 }else{
 const tq=tInfo.reduce((s,t)=>s+t.cq,0);
@@ -1521,6 +1527,12 @@ h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілен�
 if(d.multi&&d.alloc){
 h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
 d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
+// Warn if real purchases differ from allocation total
+if(d.allocMissing>0){
+h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">⚠ Реально закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, а у Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong>. Не розподілено: <strong>${fmt(d.allocMissing)}</strong>. Онови лист «Розподіл» у файлі тендерів.</div>`;
+}else if(d.allocExcess>0){
+h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.12);border-left:3px solid #ef4444;border-radius:6px;font-size:11px;color:#fca5a5">⚠ У Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong> ${esc(d.u)}, але реально закуплено лише <strong>${fmt(d.realQty)}</strong>. Перевір лист «Розподіл».</div>`;
+}
 h+=`</div>`}
 h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
 d.t.forEach(t=>{h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;h+=`</div>`});
