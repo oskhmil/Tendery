@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v57</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v58</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v57";
+const CACHE_KEY = "tendertrack_v58";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1140,32 +1140,19 @@ if(isAlloc){
 const totalAlloc=Object.keys(ovEntry).reduce((s,sup)=>s+(ovEntry[sup]||0),0);
 const allocMissing=Math.max(0,p.qty-totalAlloc);  // unallocated purchases
 const allocExcess=Math.max(0,totalAlloc-p.qty);   // allocation > real purchases
-for(const sup of Object.keys(ovEntry)){
-const supQty=ovEntry[sup]||0;
-const supTenders=allTI.filter(t=>t.s===sup);
-if(!supTenders.length)continue;
-const stq=supTenders.reduce((s,t)=>s+t.cq,0);
-const srem=stq>0?stq-supQty:0;
-const spct=stq>0?Math.round(supQty/stq*1000)/10:0;
-const sNow=new Date();let sEarliest=[9999,1,1];supTenders.forEach(t=>{const dd=cDate(t.c);if(dd[0]<sEarliest[0]||(dd[0]===sEarliest[0]&&(dd[1]<sEarliest[1]||(dd[1]===sEarliest[1]&&dd[2]<sEarliest[2]))))sEarliest=dd});
-const scs=sEarliest[0]<9999?new Date(sEarliest[0],sEarliest[1]-1,sEarliest[2]):null;
-const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
-const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
-let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
-if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry,
+// One card per drug — totals from real purchases (p.qty), breakdown in alloc field
+const tq=allTI.reduce((s,t)=>s+t.cq,0);
+const consumed=p.qty;  // real purchases
+const rem=Math.max(0,tq-consumed);
+const pct=tq>0?Math.round(consumed/tq*1000)/10:0;
+const now=new Date();let earliest=[9999,1,1];allTI.forEach(t=>{const dd=cDate(t.c);if(dd[0]<earliest[0]||(dd[0]===earliest[0]&&(dd[1]<earliest[1]||(dd[1]===earliest[1]&&dd[2]<earliest[2]))))earliest=dd});
+const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
+const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
+const mr=consumed>0?consumed/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
+let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
+if(allTI.length&&allTI[0].pk>1){const pk=allTI[0].pk;du=allTI[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=allTI.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
+results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:allTI,tq,dtq,rem,drem,pct,ml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry,
 realQty:p.qty,totalAlloc,allocMissing,allocExcess});
-}
-for(const sup of uSup){
-if(ovEntry[sup]!==undefined)continue;
-const supTenders=allTI.filter(t=>t.s===sup);
-if(!supTenders.length)continue;
-const stq=supTenders.reduce((s,t)=>s+t.cq,0);
-let sdu=p.unit,sdtq=stq;
-if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
-results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry,
-realQty:p.qty,totalAlloc,allocMissing,allocExcess});
-}
 }else{
 const tq=tInfo.reduce((s,t)=>s+t.cq,0);
 const rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
@@ -1529,9 +1516,9 @@ h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілен�
 if(d.multi&&d.alloc){
 h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
 d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
-// Warn if real purchases differ from allocation total
 if(d.allocMissing>0){
-h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">⚠ Реально закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, а у Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong>. Не розподілено: <strong>${fmt(d.allocMissing)}</strong>. Онови лист «Розподіл» у файлі тендерів.</div>`;
+h+=`<div class="alloc-row" style="border-top:1px dashed rgba(245,158,11,.4);margin-top:4px;padding-top:4px"><span class="sup-name" style="color:#fbbf24">⚠ Не розподілено</span><span style="color:#fbbf24;font-weight:600">${fmt(d.allocMissing)} ${esc(d.u)}</span></div>`;
+h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">Реально закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, а у Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong>. Онови лист «Розподіл» у файлі тендерів.</div>`;
 }else if(d.allocExcess>0){
 h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.12);border-left:3px solid #ef4444;border-radius:6px;font-size:11px;color:#fca5a5">⚠ У Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong> ${esc(d.u)}, але реально закуплено лише <strong>${fmt(d.realQty)}</strong>. Перевір лист «Розподіл».</div>`;
 }
