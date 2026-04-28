@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v56</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v57</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v56";
+const CACHE_KEY = "tendertrack_v57";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1514,7 +1514,9 @@ h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q
 h+=`<div style="margin-top:2px" onclick="event.stopPropagation();openVenPopupMonitor(${JSON.stringify(d.n).replace(/"/g,'&quot;')})">${comboBadge(d.n,mnn)}</div>`;
 if(mnn)h+=`<div class="mnn-line">${hl(mnn,searchMode==="mnn"?q:"")}</div>`;
 if(hasConflict)h+=`<div class="conflict-hint">⚡ ${d.multi.length} постачальники — оберіть</div>`;
-if(d.chosen)h+=`<div class="chosen-hint">✓ ${esc(d.chosen)}</div>`;
+if(d.chosen&&typeof d.chosen==="string")h+=`<div class="chosen-hint">✓ ${esc(d.chosen)}</div>`;
+if(d.allocMissing>0)h+=`<div class="chosen-hint" style="color:#fbbf24">⚠ Не розподілено: ${fmt(d.allocMissing)} ${esc(d.u)} (закуплено ${fmt(d.realQty)}, у Розподілі ${fmt(d.totalAlloc)})</div>`;
+if(d.allocExcess>0)h+=`<div class="chosen-hint" style="color:#fca5a5">⚠ У Розподілі забагато: ${fmt(d.allocExcess)} ${esc(d.u)} (закуплено лише ${fmt(d.realQty)})</div>`;
 h+=`</div><div class="card-qty"><div class="num">${fmt(d.dpq)}</div><div class="unit">${esc(d.du)}</div></div></div></div>`;
 if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${d.pct}%</span></div>`;
 h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
