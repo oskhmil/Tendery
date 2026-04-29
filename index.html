@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v59</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v60</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v59";
+const CACHE_KEY = "tendertrack_v60";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -2665,13 +2665,27 @@ function resolveF6Name(drugName){
   for(const m of f6Months){
     if(m.drugs&&m.drugs[drugName])return drugName;
   }
-  // Otherwise scan all F6 names via findInMonitor in reverse
-  if(typeof findInMonitor!=="function")return null;
+  // Collect all F6 names
   const allF6Names=new Set();
   f6Months.forEach(m=>{if(m.drugs)Object.keys(m.drugs).forEach(n=>allF6Names.add(n))});
-  for(const f6n of allF6Names){
-    const monitor=findInMonitor(f6n);
-    if(monitor&&monitor.n===drugName)return f6n;
+  // Try findInMonitor reverse (F6 → tender) — works when drugName is the F6/purchases name
+  if(typeof findInMonitor==="function"){
+    for(const f6n of allF6Names){
+      const monitor=findInMonitor(f6n);
+      if(monitor&&monitor.n===drugName)return f6n;
+    }
+  }
+  // Token-based fallback: drugName might be from tender (commercial name).
+  // Match by brand tokens (ignoring registered marks, packaging info, etc).
+  if(typeof getBrand==="function"&&typeof tokMatch==="function"){
+    const nB=getBrand(drugName);
+    if(nB.length){
+      for(const f6n of allF6Names){
+        const fB=getBrand(f6n);
+        if(!fB.length)continue;
+        if(tokMatch(nB,fB)||tokMatch(fB,nB))return f6n;
+      }
+    }
   }
   return null;
 }
