@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v58</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v59</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v58";
+const CACHE_KEY = "tendertrack_v59";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -2516,9 +2516,9 @@ function buildPendingDialog(){
   });
   let h='';
   h+='<div onclick="closePendingDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:105;display:flex;align-items:center;justify-content:center;padding:8px">';
-  h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+  h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:600px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
   h+=`<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#c4b5fd">⏳ Позиції, що очікуються (${keys.length})</div>`;
-  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається, коли у Формі 6 зʼявляється надходження, або через 30 днів.</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається при будь-якому надходженні у Формі 6.</div>';
   if(!keys.length){
     h+='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Нічого не очікується</div>';
   }else{
@@ -2527,7 +2527,10 @@ function buildPendingDialog(){
       const p=ordersPending[key];
       const d=p.ts?new Date(p.ts):null;
       const daysSince=d?Math.floor((Date.now()-d.getTime())/(24*60*60*1000)):0;
-      const daysLeft=PENDING_EXPIRE_DAYS-daysSince;
+      // Diagnostic: show f6 income status
+      const f6n=p.f6Name||(typeof resolveF6Name==="function"?resolveF6Name(p.drugName):null);
+      const curIncome=f6n&&typeof totalIncomeForDrug==="function"?totalIncomeForDrug(f6n):null;
+      const delta=(curIncome!=null&&p.incomeAtMark!=null)?(curIncome-p.incomeAtMark):null;
       h+=`<div style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">`;
       h+=`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">`;
       h+=`<div style="flex:1;min-width:0">`;
@@ -2535,8 +2538,20 @@ function buildPendingDialog(){
       h+=`<div style="font-size:10px;color:var(--accent)">Постачальник: ${esc(p.supplier||"?")}</div>`;
       h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">`;
       if(d)h+=`${d.toLocaleDateString("uk-UA")} (${daysSince}д тому)`;
-      h+=` · ${p.f6Name?"відстеж. за Формою 6":`авто-зняття за ${daysLeft>0?daysLeft+"д":"скоро"}`}`;
       h+=`</div>`;
+      // Diagnostic block — F6 tracking status
+      if(!f6n){
+        h+=`<div style="font-size:10px;color:#fbbf24;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,.08);border-radius:4px">⚠ Не знайдено у Формі 6 — авто-зняття не працює, прибери вручну</div>`;
+      }else{
+        h+=`<div style="font-size:10px;margin-top:4px;padding:4px 8px;background:rgba(20,24,30,.6);border-radius:4px;color:var(--muted)">`;
+        h+=`Ф6: <span style="color:var(--text)">${esc(f6n).slice(0,50)}</span><br>`;
+        h+=`Надходження при позначці: <strong>${p.incomeAtMark!=null?p.incomeAtMark:"—"}</strong> · Зараз: <strong>${curIncome!=null?curIncome:"—"}</strong>`;
+        if(delta!=null){
+          if(delta>0)h+=` · <span style="color:#86efac">приріст +${delta}</span>`;
+          else h+=` · <span style="color:#fca5a5">без приросту</span>`;
+        }
+        h+=`</div>`;
+      }
       h+=`</div>`;
       h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger);flex-shrink:0" onclick="removePending('${key.replace(/'/g,"&#39;")}')">✕</button>`;
       h+=`</div>`;
@@ -2545,11 +2560,17 @@ function buildPendingDialog(){
     h+='</div>';
     h+='<div style="display:flex;gap:6px;margin-top:10px">';
     h+='<button class="sort-btn" style="flex:1;padding:8px;font-size:12px" onclick="closePendingDialog()">Закрити</button>';
+    h+='<button class="sort-btn" style="flex:1;padding:8px;font-size:12px" onclick="recheckPending()">🔄 Перевірити надходження</button>';
     h+='<button class="sort-btn" style="flex:1;padding:8px;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="clearAllPending()">🗑 Очистити все</button>';
     h+='</div>';
   }
   h+='</div></div>';
   return h;
+}
+function recheckPending(){
+  if(event)event.stopPropagation();
+  cleanupPendingByIncome();
+  render();
 }
 function onAddSearchInput(v){
   ordersAddQuery=v;
