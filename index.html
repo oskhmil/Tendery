@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v60</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v63</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v60";
+const CACHE_KEY = "tendertrack_v63";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1136,23 +1136,75 @@ else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
 }
 const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
 if(isAlloc){
-// Calculate total qty assigned via Розподіл and compare with real purchases
-const totalAlloc=Object.keys(ovEntry).reduce((s,sup)=>s+(ovEntry[sup]||0),0);
-const allocMissing=Math.max(0,p.qty-totalAlloc);  // unallocated purchases
-const allocExcess=Math.max(0,totalAlloc-p.qty);   // allocation > real purchases
-// One card per drug — totals from real purchases (p.qty), breakdown in alloc field
-const tq=allTI.reduce((s,t)=>s+t.cq,0);
-const consumed=p.qty;  // real purchases
-const rem=Math.max(0,tq-consumed);
-const pct=tq>0?Math.round(consumed/tq*1000)/10:0;
-const now=new Date();let earliest=[9999,1,1];allTI.forEach(t=>{const dd=cDate(t.c);if(dd[0]<earliest[0]||(dd[0]===earliest[0]&&(dd[1]<earliest[1]||(dd[1]===earliest[1]&&dd[2]<earliest[2]))))earliest=dd});
-const cs=earliest[0]<9999?new Date(earliest[0],earliest[1]-1,earliest[2]):null;
-const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
-const mr=consumed>0?consumed/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
-let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
-if(allTI.length&&allTI[0].pk>1){const pk=allTI[0].pk;du=allTI[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=allTI.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:allTI,tq,dtq,rem,drem,pct,ml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:ovEntry,
+const allocSups=Object.keys(ovEntry); // порядок як у Розподілі
+const supCapacity={};
+for(const sup of allocSups){
+  const supTenders=allTI.filter(t=>t.s===sup);
+  supCapacity[sup]=supTenders.reduce((s,t)=>s+t.cq,0);
+}
+// Стартові значення з Розподілу (обмежені ємністю)
+const effective={};
+for(const sup of allocSups)effective[sup]=Math.min(ovEntry[sup]||0,supCapacity[sup]||0);
+// Чи є постачальник з Розподілу, що досяг 100% свого тендеру?
+const anyAt100=allocSups.some(sup=>(supCapacity[sup]||0)>0&&effective[sup]>=supCapacity[sup]);
+let totalUsed=Object.values(effective).reduce((s,v)=>s+v,0);
+let unallocated=Math.max(0,p.qty-totalUsed);
+// Переливання активне ТІЛЬКИ якщо хоча б один постачальник у Розподілі вже на 100%
+if(unallocated>0&&anyAt100){
+  for(const sup of allocSups){
+    if(unallocated<=0)break;
+    const cap=supCapacity[sup]||0;
+    const free=Math.max(0,cap-effective[sup]);
+    if(free<=0)continue;
+    const give=Math.min(free,unallocated);
+    effective[sup]+=give;
+    unallocated-=give;
+  }
+  // Якщо все ще лишилось — інші постачальники поза Розподілом
+  if(unallocated>0){
+    for(const sup of uSup){
+      if(allocSups.includes(sup))continue;
+      if(unallocated<=0)break;
+      const supTenders=allTI.filter(t=>t.s===sup);
+      const cap=supTenders.reduce((s,t)=>s+t.cq,0);
+      if(cap<=0)continue;
+      const give=Math.min(cap,unallocated);
+      effective[sup]=(effective[sup]||0)+give;
+      unallocated-=give;
+    }
+  }
+}
+const totalAlloc=Object.values(effective).reduce((s,v)=>s+v,0);
+const allocMissing=Math.max(0,p.qty-totalAlloc);
+const allocExcess=Math.max(0,totalAlloc-p.qty);
+// Окрема картка для кожного постачальника з ефективною кількістю
+for(const sup of Object.keys(effective)){
+const supQty=effective[sup]||0;
+const supTenders=allTI.filter(t=>t.s===sup);
+if(!supTenders.length)continue;
+const stq=supTenders.reduce((s,t)=>s+t.cq,0);
+const srem=Math.max(0,stq-supQty);
+const spct=stq>0?Math.round(supQty/stq*1000)/10:0;
+const sNow=new Date();let sEarliest=[9999,1,1];supTenders.forEach(t=>{const dd=cDate(t.c);if(dd[0]<sEarliest[0]||(dd[0]===sEarliest[0]&&(dd[1]<sEarliest[1]||(dd[1]===sEarliest[1]&&dd[2]<sEarliest[2]))))sEarliest=dd});
+const scs=sEarliest[0]<9999?new Date(sEarliest[0],sEarliest[1]-1,sEarliest[2]):null;
+const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
+const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
+let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
+if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
+results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,
 realQty:p.qty,totalAlloc,allocMissing,allocExcess});
+}
+// Постачальник у тендерах є, але немає в effective
+for(const sup of uSup){
+if(effective[sup]!==undefined)continue;
+const supTenders=allTI.filter(t=>t.s===sup);
+if(!supTenders.length)continue;
+const stq=supTenders.reduce((s,t)=>s+t.cq,0);
+let sdu=p.unit,sdtq=stq;
+if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
+results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,
+realQty:p.qty,totalAlloc,allocMissing,allocExcess});
+}
 }else{
 const tq=tInfo.reduce((s,t)=>s+t.cq,0);
 const rem=tq>0?tq-consumed:0,pct=tq>0?Math.round(consumed/tq*1000)/10:0;
