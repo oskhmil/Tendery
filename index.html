@@ -166,7 +166,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v63</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v64</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -268,7 +268,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v63";
+const CACHE_KEY = "tendertrack_v64";
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -1286,7 +1286,7 @@ try{
 const buf=await fetch(GDRIVE_F6).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.arrayBuffer()});
 f6Months=parseForma6(buf);
 f6LastUpdated=new Date();
-cleanupPendingByIncome();
+cleanupPendingByIncome();cleanupQtyOverridesByIncome();
 saveCache();
 const onHome=!document.getElementById("home-screen").classList.contains("hidden");
 if(!onHome&&currentView==="consumption")showMain();
@@ -1301,7 +1301,7 @@ showLoader("Обробка Форми 6...");
 setTimeout(()=>{
 f6Months=parseForma6(e.target.result);
 f6LastUpdated=new Date();
-cleanupPendingByIncome();
+cleanupPendingByIncome();cleanupQtyOverridesByIncome();
 saveCache();showMain();
 },50);
 }catch(err){document.getElementById("f6-start-error").innerHTML='<div class="err-box">'+esc(err.message)+'</div>';showScreen("f6start")}
@@ -2144,8 +2144,10 @@ const packsNeeded=Math.ceil(l.deficit/pk);
 const qtyInPurchaseUnits=packsNeeded*pk; // actual amount being ordered (in f6 units)
 const packsAvailable=Math.floor(sup.tenderRemaining/pk);
 const autoPacks=Math.min(packsNeeded,packsAvailable);
-const overridden=(ordersQtyOverride[l.drugName]!=null);
-const packsToOrder=overridden?Math.max(0,ordersQtyOverride[l.drugName]|0):autoPacks;
+const _ovRaw=ordersQtyOverride[l.drugName];
+const overridden=(_ovRaw!=null);
+const _ovPacks=overridden?(typeof _ovRaw==="object"?(_ovRaw.packs|0):(_ovRaw|0)):0;
+const packsToOrder=overridden?Math.max(0,_ovPacks):autoPacks;
 const shortfall=packsNeeded>packsAvailable?packsNeeded-packsAvailable:0;
 const costEstimate=sup.pricePerPack!=null?packsToOrder*sup.pricePerPack:null;
 // VEN: auto from WHO EML, user override wins
@@ -2621,7 +2623,7 @@ function buildPendingDialog(){
 }
 function recheckPending(){
   if(event)event.stopPropagation();
-  cleanupPendingByIncome();
+  cleanupPendingByIncome();cleanupQtyOverridesByIncome();
   render();
 }
 function onAddSearchInput(v){
@@ -2939,8 +2941,15 @@ function setOrderQty(gi,ii,v){
 const g=(window._ordersGroups||[])[gi];if(!g)return;
 const it=g.items[ii];if(!it)return;
 const n=Math.max(0,parseInt(v)||0);
-if(n===it.autoPacks)delete ordersQtyOverride[it.drugName];
-else ordersQtyOverride[it.drugName]=n;
+if(n===it.autoPacks){
+  delete ordersQtyOverride[it.drugName];
+}else{
+  // Store qty + snapshot of F6 income at time of edit
+  // (so when income grows after a delivery, we auto-reset)
+  const f6n=(typeof resolveF6Name==="function")?resolveF6Name(it.drugName):null;
+  const incomeAtSet=f6n?totalIncomeForDrug(f6n):0;
+  ordersQtyOverride[it.drugName]={packs:n,incomeAtSet,f6Name:f6n||null};
+}
 saveQtyOverride();render();
 }
 function resetOrderQty(gi,ii){
@@ -2948,6 +2957,28 @@ const g=(window._ordersGroups||[])[gi];if(!g)return;
 const it=g.items[ii];if(!it)return;
 delete ordersQtyOverride[it.drugName];
 saveQtyOverride();render();
+}
+// Auto-reset qty overrides when F6 shows income growth (delivery arrived → recalculate)
+function cleanupQtyOverridesByIncome(){
+  if(!f6Months||!f6Months.length)return;
+  let changed=false;
+  const removed=[];
+  for(const drugName of Object.keys(ordersQtyOverride)){
+    const ov=ordersQtyOverride[drugName];
+    // Skip old-style records (just a number) — they don't have snapshot
+    if(typeof ov!=="object"||ov===null)continue;
+    if(ov.incomeAtSet==null)continue;
+    const f6n=ov.f6Name||(typeof resolveF6Name==="function"?resolveF6Name(drugName):null);
+    if(!f6n)continue;
+    const currentIncome=totalIncomeForDrug(f6n);
+    if(currentIncome>ov.incomeAtSet){
+      removed.push(drugName+" (income "+ov.incomeAtSet+"→"+currentIncome+")");
+      delete ordersQtyOverride[drugName];
+      changed=true;
+    }
+  }
+  if(removed.length)console.log("[TenderTrack] cleanupQtyOverridesByIncome reset:",removed);
+  if(changed)saveQtyOverride();
 }
 // Export/import VEN as CSV
 function exportVEN(){
@@ -3267,14 +3298,14 @@ if(f6Months.length&&allData.length===0)fetchDriveBackground();
 }
 loadVen();
 cleanupPending();
-cleanupPendingByIncome();
+cleanupPendingByIncome();cleanupQtyOverridesByIncome();
 showHome();
 // Pull cloud state in background; re-render if something changed
 syncPull(false).then(changed=>{
   if(changed){
     // re-run cleanups in case pulled pending needs trimming
     cleanupPending();
-    cleanupPendingByIncome();
+    cleanupPendingByIncome();cleanupQtyOverridesByIncome();
     render();
   }
 });
@@ -3286,7 +3317,7 @@ document.addEventListener("visibilitychange",()=>{
   if(Date.now()-_lastVisPull<10000)return;
   _lastVisPull=Date.now();
   syncPull(true).then(changed=>{
-    if(changed){cleanupPending();cleanupPendingByIncome();render()}
+    if(changed){cleanupPending();cleanupPendingByIncome();cleanupQtyOverridesByIncome();render()}
   });
 });
 })();
