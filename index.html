@@ -2544,6 +2544,9 @@ function closeAddDialog(){
 }
 function openPendingDialog(){
   if(event)event.stopPropagation();
+  // Re-check income deltas before showing the list — if a delivery arrived since cache load,
+  // the matching entry will disappear here instead of confusing the user with a stale +N badge.
+  cleanupPendingByIncome();cleanupQtyOverridesByIncome();
   ordersPendingDialog=true;
   render();
 }
@@ -2607,7 +2610,7 @@ function buildPendingDialog(){
         h+=`</div>`;
       }
       h+=`</div>`;
-      h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger);flex-shrink:0" onclick="removePending('${key.replace(/'/g,"&#39;")}')">✕</button>`;
+      h+=`<button class="sort-btn" title="Видалити позицію" style="font-size:16px;padding:6px 10px;color:var(--danger);border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.08);flex-shrink:0;line-height:1" onclick="removePending('${key.replace(/'/g,"&#39;")}')">✕</button>`;
       h+=`</div>`;
       h+=`</div>`;
     }
