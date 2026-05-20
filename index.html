@@ -2594,7 +2594,8 @@ function buildPendingDialog(){
       const daysSince=d?Math.floor((Date.now()-d.getTime())/(24*60*60*1000)):0;
       // Diagnostic: show f6 income status. Always re-resolve via resolveF6Name —
       // p.f6Name may have been cached under the older (looser) resolver and now be invalid.
-      const f6n=(typeof resolveF6Name==="function"?resolveF6Name(p.drugName):null);
+      const diag=(typeof resolveF6NameDiag==="function")?resolveF6NameDiag(p.drugName):{found:null,candidates:[]};
+      const f6n=diag.found;
       const curIncome=f6n&&typeof totalIncomeForDrug==="function"?totalIncomeForDrug(f6n):null;
       const delta=(curIncome!=null&&p.incomeAtMark!=null)?(curIncome-p.incomeAtMark):null;
       h+=`<div style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">`;
@@ -2608,6 +2609,15 @@ function buildPendingDialog(){
       // Diagnostic block — F6 tracking status
       if(!f6n){
         h+=`<div style="font-size:10px;color:#fbbf24;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,.08);border-radius:4px">⚠ Не знайдено у Формі 6 — авто-зняття не працює, прибери вручну</div>`;
+        // Show rejected candidates so user can see why
+        if(diag.candidates.length){
+          h+=`<div style="font-size:10px;margin-top:4px;padding:4px 8px;background:rgba(20,24,30,.6);border-radius:4px;color:var(--muted)">`;
+          h+=`<div style="margin-bottom:2px">Розглянуті кандидати у Ф6:</div>`;
+          for(const c of diag.candidates.slice(0,5)){
+            h+=`<div style="margin-left:6px;color:#fca5a5">• ${esc(c.name).slice(0,60)} <span style="color:var(--muted)">— блокує ${esc(c.blockedBy||"?")}</span></div>`;
+          }
+          h+=`</div>`;
+        }
       }else{
         h+=`<div style="font-size:10px;margin-top:4px;padding:4px 8px;background:rgba(20,24,30,.6);border-radius:4px;color:var(--muted)">`;
         h+=`Ф6: <span style="color:var(--text)">${esc(f6n).slice(0,50)}</span><br>`;
@@ -2726,10 +2736,17 @@ function totalIncomeForDrug(drugName){
 // Resolve the F6 name corresponding to a drug — F6 names and purchase names may differ slightly.
 // Uses findInMonitor reverse lookup. Returns the F6 drug name if found.
 function resolveF6Name(drugName){
-  if(!f6Months||!f6Months.length)return null;
+  const r=resolveF6NameDiag(drugName);
+  return r.found;
+}
+// Diagnostic version: returns {found, candidates:[{name, blockedBy}]}
+// where blockedBy is null (match), or string explaining why rejected.
+function resolveF6NameDiag(drugName){
+  const out={found:null,candidates:[]};
+  if(!f6Months||!f6Months.length)return out;
   // Direct match first
   for(const m of f6Months){
-    if(m.drugs&&m.drugs[drugName])return drugName;
+    if(m.drugs&&m.drugs[drugName]){out.found=drugName;return out}
   }
   // Collect all F6 names
   const allF6Names=new Set();
@@ -2738,13 +2755,10 @@ function resolveF6Name(drugName){
   if(typeof findInMonitor==="function"){
     for(const f6n of allF6Names){
       const monitor=findInMonitor(f6n);
-      if(monitor&&monitor.n===drugName)return f6n;
+      if(monitor&&monitor.n===drugName){out.found=f6n;return out}
     }
   }
-  // Token-based fallback: drugName might be from tender (commercial name).
-  // CRITICAL: also verify form/container/dose/volume/pack — otherwise drugs with the same
-  // brand but different packaging (e.g. ВОДА ДЛЯ ІН'ЄКЦІЙ 400мл пляшки vs Вода 2мл ампули)
-  // would falsely resolve to each other, causing pending entries never to clear.
+  // Token-based fallback with full verification
   if(typeof getBrand==="function"&&typeof tokMatch==="function"){
     const nB=getBrand(drugName);
     if(nB.length){
@@ -2757,34 +2771,24 @@ function resolveF6Name(drugName){
         const fB=getBrand(f6n);
         if(!fB.length)continue;
         if(!(tokMatch(nB,fB)||tokMatch(fB,nB)))continue;
-        // Form
-        if(typeof formsOk==="function"&&typeof getForm==="function"){
-          if(!formsOk(nF,getForm(f6n)))continue;
-        }
-        // Container
-        if(typeof containersOk==="function"&&typeof getContainer==="function"){
-          if(!containersOk(nC,getContainer(f6n)))continue;
-        }
-        // Pack: if both have explicit № and they differ, reject
-        if(typeof extractPkStrict==="function"){
-          const fPk=extractPkStrict(f6n);
-          if(nPk>0&&fPk>0&&nPk!==fPk)continue;
-        }
-        // Dose
-        if(typeof getDoses==="function"){
-          const fD=getDoses(f6n);
-          if(nD.size&&fD.size&&!setsOverlap(nD,fD))continue;
-        }
-        // Volume
-        if(typeof getVolumes==="function"){
-          const fV=getVolumes(f6n);
-          if(nV.size&&fV.size&&!setsOverlap(nV,fV))continue;
-        }
-        return f6n;
+        // From here — name shares brand with target. Record as candidate.
+        const fF=(typeof getForm==="function")?getForm(f6n):new Set();
+        const fC=(typeof getContainer==="function")?getContainer(f6n):null;
+        const fD=(typeof getDoses==="function")?getDoses(f6n):new Set();
+        const fV=(typeof getVolumes==="function")?getVolumes(f6n):new Set();
+        const fPk=(typeof extractPkStrict==="function")?extractPkStrict(f6n):0;
+        let blockedBy=null;
+        if(typeof formsOk==="function"&&!formsOk(nF,fF))blockedBy="форма ("+[...nF]+" ≠ "+[...fF]+")";
+        else if(typeof containersOk==="function"&&!containersOk(nC,fC))blockedBy="контейнер ("+nC+" ≠ "+fC+")";
+        else if(nPk>0&&fPk>0&&nPk!==fPk)blockedBy="пак (№"+nPk+" ≠ №"+fPk+")";
+        else if(nD.size&&fD.size&&!setsOverlap(nD,fD))blockedBy="доза ("+[...nD]+" ≠ "+[...fD]+")";
+        else if(nV.size&&fV.size&&!setsOverlap(nV,fV))blockedBy="об'єм ("+[...nV]+" ≠ "+[...fV]+")";
+        out.candidates.push({name:f6n,blockedBy});
+        if(!blockedBy&&!out.found)out.found=f6n;
       }
     }
   }
-  return null;
+  return out;
 }
 
 // Auto-remove "pending" flags when F6 shows new income since the mark was set
