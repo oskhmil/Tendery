@@ -2584,8 +2584,9 @@ function buildPendingDialog(){
       const p=ordersPending[key];
       const d=p.ts?new Date(p.ts):null;
       const daysSince=d?Math.floor((Date.now()-d.getTime())/(24*60*60*1000)):0;
-      // Diagnostic: show f6 income status
-      const f6n=p.f6Name||(typeof resolveF6Name==="function"?resolveF6Name(p.drugName):null);
+      // Diagnostic: show f6 income status. Always re-resolve via resolveF6Name —
+      // p.f6Name may have been cached under the older (looser) resolver and now be invalid.
+      const f6n=(typeof resolveF6Name==="function"?resolveF6Name(p.drugName):null);
       const curIncome=f6n&&typeof totalIncomeForDrug==="function"?totalIncomeForDrug(f6n):null;
       const delta=(curIncome!=null&&p.incomeAtMark!=null)?(curIncome-p.incomeAtMark):null;
       h+=`<div style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">`;
@@ -2733,14 +2734,45 @@ function resolveF6Name(drugName){
     }
   }
   // Token-based fallback: drugName might be from tender (commercial name).
-  // Match by brand tokens (ignoring registered marks, packaging info, etc).
+  // CRITICAL: also verify form/container/dose/volume/pack — otherwise drugs with the same
+  // brand but different packaging (e.g. ВОДА ДЛЯ ІН'ЄКЦІЙ 400мл пляшки vs Вода 2мл ампули)
+  // would falsely resolve to each other, causing pending entries never to clear.
   if(typeof getBrand==="function"&&typeof tokMatch==="function"){
     const nB=getBrand(drugName);
     if(nB.length){
+      const nF=(typeof getForm==="function")?getForm(drugName):new Set();
+      const nC=(typeof getContainer==="function")?getContainer(drugName):null;
+      const nD=(typeof getDoses==="function")?getDoses(drugName):new Set();
+      const nV=(typeof getVolumes==="function")?getVolumes(drugName):new Set();
+      const nPk=(typeof extractPkStrict==="function")?extractPkStrict(drugName):0;
       for(const f6n of allF6Names){
         const fB=getBrand(f6n);
         if(!fB.length)continue;
-        if(tokMatch(nB,fB)||tokMatch(fB,nB))return f6n;
+        if(!(tokMatch(nB,fB)||tokMatch(fB,nB)))continue;
+        // Form
+        if(typeof formsOk==="function"&&typeof getForm==="function"){
+          if(!formsOk(nF,getForm(f6n)))continue;
+        }
+        // Container
+        if(typeof containersOk==="function"&&typeof getContainer==="function"){
+          if(!containersOk(nC,getContainer(f6n)))continue;
+        }
+        // Pack: if both have explicit № and they differ, reject
+        if(typeof extractPkStrict==="function"){
+          const fPk=extractPkStrict(f6n);
+          if(nPk>0&&fPk>0&&nPk!==fPk)continue;
+        }
+        // Dose
+        if(typeof getDoses==="function"){
+          const fD=getDoses(f6n);
+          if(nD.size&&fD.size&&!setsOverlap(nD,fD))continue;
+        }
+        // Volume
+        if(typeof getVolumes==="function"){
+          const fV=getVolumes(f6n);
+          if(nV.size&&fV.size&&!setsOverlap(nV,fV))continue;
+        }
+        return f6n;
       }
     }
   }
@@ -2971,7 +3003,9 @@ function cleanupQtyOverridesByIncome(){
     // Skip old-style records (just a number) — they don't have snapshot
     if(typeof ov!=="object"||ov===null)continue;
     if(ov.incomeAtSet==null)continue;
-    const f6n=ov.f6Name||(typeof resolveF6Name==="function"?resolveF6Name(drugName):null);
+    // Always re-resolve via resolveF6Name — cached ov.f6Name may have been set by the
+    // older (looser) resolver and point to a wrong F6 entry.
+    const f6n=(typeof resolveF6Name==="function")?resolveF6Name(drugName):null;
     if(!f6n)continue;
     const currentIncome=totalIncomeForDrug(f6n);
     if(currentIncome>ov.incomeAtSet){
