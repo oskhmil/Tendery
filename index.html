@@ -1403,7 +1403,20 @@ else if(searchMode==="mnn")res=res.filter(d=>d.t.some(t=>multiMatch(t.mn,w)));
 else if(searchMode==="supplier")res=res.filter(d=>d.t.some(t=>multiMatch(t.s,w)));
 else if(searchMode==="contract")res=res.filter(d=>d.t.some(t=>multiMatch(t.c,w)));
 }
-if(currentFilter!=="all")res=res.filter(d=>gs(d)===currentFilter);
+if(currentFilter!=="all"){
+  res=res.filter(d=>gs(d)===currentFilter);
+  // Special case: in "exhausted" filter, hide cards whose drug has another non-exhausted card.
+  // Happens when one supplier's contract is depleted but a sibling supplier still has stock —
+  // the drug as a whole isn't depleted, just one of its allocation lines.
+  if(currentFilter==="exhausted"){
+    const hasAlt=new Set();
+    for(const d of allData){
+      const st=gs(d);
+      if(st!=="exhausted"&&st!=="none")hasAlt.add(d.n);
+    }
+    res=res.filter(d=>!hasAlt.has(d.n));
+  }
+}
 res=[...res];
 if(currentSort==="status")res.sort((x,y)=>(SO[gs(x)]??5)-(SO[gs(y)]??5)||x.n.localeCompare(y.n,"uk"));
 else if(currentSort==="name")res.sort((x,y)=>x.n.localeCompare(y.n,"uk"));
@@ -1517,6 +1530,19 @@ if(ordersPendingDialog){
 function renderMonitor(el){
 const counts={all:allData.length,exhausted:0,critical:0,warning:0,ok:0,idle:0,none:0};
 allData.forEach(d=>counts[gs(d)]++);
+// Adjust "exhausted" count: drugs whose other contract still has stock aren't really depleted.
+{
+  const hasAlt=new Set();
+  for(const d of allData){
+    const st=gs(d);
+    if(st!=="exhausted"&&st!=="none")hasAlt.add(d.n);
+  }
+  let hidden=0;
+  for(const d of allData){
+    if(gs(d)==="exhausted"&&hasAlt.has(d.n))hidden++;
+  }
+  counts.exhausted=Math.max(0,counts.exhausted-hidden);
+}
 const items=filterData(allData);
 const q=getActiveSearch();
 const hq=searchMode==="name"?q:searchMode==="mnn"?q:"";
