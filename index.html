@@ -1128,11 +1128,10 @@ if(!isMulti||!ovEntry)tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);retur
 let left=p.qty;const active=[];const activeConsumed=[];
 for(const t of tInfo){
 if(left<=0){active.push(t);activeConsumed.push(0);continue}
-if(left>=t.cq){left-=t.cq;}
+if(left>=t.cq){active.push(t);activeConsumed.push(t.cq);left-=t.cq;}
 else{active.push(t);activeConsumed.push(left);left=0}
 }
-if(active.length>0){tInfo=active;consumed=activeConsumed.reduce((s,x)=>s+x,0);}
-else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
+tInfo=active;consumed=activeConsumed.reduce((s,x)=>s+x,0);
 }
 const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
 if(isAlloc){
