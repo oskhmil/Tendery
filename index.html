@@ -1125,13 +1125,13 @@ if(isMulti&&ovEntry&&typeof ovEntry==="object"){
 tInfo=allTI;
 }else if(tInfo.length>1){
 if(!isMulti||!ovEntry)tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
-let left=p.qty;const active=[];
+let left=p.qty;const active=[];const activeConsumed=[];
 for(const t of tInfo){
-if(left<=0){active.push(t);continue}
+if(left<=0){active.push(t);activeConsumed.push(0);continue}
 if(left>=t.cq){left-=t.cq;}
-else{consumed=left;active.push(t);left=0}
+else{active.push(t);activeConsumed.push(left);left=0}
 }
-if(active.length>0)tInfo=active;
+if(active.length>0){tInfo=active;consumed=activeConsumed.reduce((s,x)=>s+x,0);}
 else{tInfo=[tInfo[tInfo.length-1]];consumed=p.qty}
 }
 const isAlloc=isMulti&&ovEntry&&typeof ovEntry==="object";
