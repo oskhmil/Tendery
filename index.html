@@ -2683,8 +2683,8 @@ function closePendingDialog(){
 }
 function openSupplierReport(){if(typeof event!=="undefined"&&event)event.stopPropagation();supplierReportDialog=true;render();}
 function closeSupplierReport(){supplierReportDialog=false;render();}
-function buildSupplierReport(){
-  const money=v=>Math.round(v||0).toLocaleString("uk-UA");
+let _supReport=null,_supPieMetric="spend";
+function computeSupplierReport(){
   // Законтрактовано (план): Σ кількість×ціна по постачальнику — прямо з тендерів
   const contracted={};
   for(const t of (allTenders||[])){
@@ -2706,38 +2706,111 @@ function buildSupplierReport(){
   const totContr=Object.values(contracted).reduce((a,b)=>a+b,0);
   const sups=Array.from(new Set([...Object.keys(contracted),...Object.keys(spend)]));
   sups.sort((a,b)=>(spend[b]||0)-(spend[a]||0)||(contracted[b]||0)-(contracted[a]||0));
-
+  const rows=sups.map(s=>({
+    supplier:s, spend:spend[s]||0, contracted:contracted[s]||0,
+    spendShare:totSpend>0?(spend[s]||0)/totSpend*100:0,
+    contractShare:totContr>0?(contracted[s]||0)/totContr*100:0,
+    pick:(contracted[s]||0)>0?Math.min(100,(spend[s]||0)/(contracted[s]||0)*100):0
+  }));
+  _supReport={rows,totSpend,totContr,offContract};
+  return _supReport;
+}
+function buildSupplierReport(){
+  const money=v=>Math.round(v||0).toLocaleString("uk-UA");
+  const rep=computeSupplierReport();
   let h='';
   h+='<div onclick="closeSupplierReport()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:105;display:flex;align-items:center;justify-content:center;padding:8px">';
   h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:640px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
-  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><div style="font-size:16px;font-weight:700">📊 Звіт по постачальниках</div>';
-  h+='<button onclick="closeSupplierReport()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button></div>';
-  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Закуплено разом: <strong style="color:var(--text)">${money(totSpend)} грн</strong> · Угоди разом: <strong style="color:var(--text)">${money(totContr)} грн</strong> · по всіх складах 1ТМО.</div>`;
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px"><div style="font-size:16px;font-weight:700">📊 Звіт по постачальниках</div>';
+  h+='<div style="display:flex;gap:6px;align-items:center"><button onclick="exportSupplierXlsx()" class="exp-btn" style="color:#34d399;border-color:#34d399">⬇ Excel</button>';
+  h+='<button onclick="closeSupplierReport()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button></div></div>';
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Закуплено разом: <strong style="color:var(--text)">${money(rep.totSpend)} грн</strong> · Угоди разом: <strong style="color:var(--text)">${money(rep.totContr)} грн</strong> · по всіх складах 1ТМО.</div>`;
   h+='<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px">';
-  if(!sups.length){h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Немає даних. Завантаж закупівлі й тендери.</div>';}
-  for(const s of sups){
-    const sp=spend[s]||0, co=contracted[s]||0;
-    const spShare=totSpend>0?sp/totSpend*100:0;
-    const coShare=totContr>0?co/totContr*100:0;
-    const pick=co>0?Math.min(100,sp/co*100):0; // вибірка своєї угоди
-    h+='<div style="border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:10px;padding:10px 12px">';
-    h+=`<div style="font-weight:600;font-size:13px;margin-bottom:8px">${esc(s)}</div>`;
-    // Закуплено (фактично) + доля
-    h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px"><span>Закуплено</span><span><strong style="color:var(--text)">${money(sp)} грн</strong> · ${spShare.toFixed(1)}%</span></div>`;
-    h+=`<div style="height:6px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${spShare.toFixed(1)}%;background:#22c55e"></div></div>`;
-    // Угода (план) + доля
-    h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px"><span>Угода</span><span><strong style="color:var(--text)">${money(co)} грн</strong> · ${coShare.toFixed(1)}%</span></div>`;
-    h+=`<div style="height:6px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${coShare.toFixed(1)}%;background:#8b5cf6"></div></div>`;
-    h+=`<div style="font-size:11px;color:var(--muted)">Вибірка угоди: <strong style="color:var(--text)">${pick.toFixed(1)}%</strong></div>`;
-    h+='</div>';
-  }
-  if(offContract>0){
-    h+=`<div style="border:1px dashed rgba(255,255,255,.15);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--muted)">Поза угодами (без зіставлення з тендером): <strong style="color:var(--text)">${money(offContract)} грн</strong></div>`;
+  if(!rep.rows.length){h+='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Немає даних. Завантаж закупівлі й тендери.</div>';}
+  else{
+    // ── Кругова діаграма ──
+    h+='<div style="background:#23262b;border-radius:10px;padding:8px">';
+    h+='<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">';
+    h+='<button id="sup-pie-spend" onclick="drawSupplierPie(\'spend\')" class="exp-btn">Закуплено</button>';
+    h+='<button id="sup-pie-contract" onclick="drawSupplierPie(\'contract\')" class="exp-btn">Угода</button>';
+    h+='<span style="flex:1"></span>';
+    h+='<button onclick="downloadSupplierPie()" class="exp-btn" style="color:#60a5fa;border-color:#60a5fa">⬇ PNG</button></div>';
+    h+='<canvas id="sup-pie" width="760" height="420" style="width:100%;border-radius:6px;display:block"></canvas></div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin:2px 0 4px;line-height:1.4">🟢 Зелена смужка — частка від усіх <b>витрат</b> (хто скільки грошей вибрав). 🟣 Фіолетова — частка від усіх <b>угод</b> (тендерного портфеля).</div>';
+    for(const r of rep.rows){
+      h+='<div style="border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:10px;padding:10px 12px">';
+      h+=`<div style="font-weight:600;font-size:13px;margin-bottom:8px">${esc(r.supplier)}</div>`;
+      h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px"><span>Закуплено (факт)</span><span><strong style="color:var(--text)">${money(r.spend)} грн</strong> · ${r.spendShare.toFixed(1)}% витрат</span></div>`;
+      h+=`<div style="height:6px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${r.spendShare.toFixed(1)}%;background:#22c55e"></div></div>`;
+      h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px"><span>Угода (план)</span><span><strong style="color:var(--text)">${money(r.contracted)} грн</strong> · ${r.contractShare.toFixed(1)}% портфеля</span></div>`;
+      h+=`<div style="height:6px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${r.contractShare.toFixed(1)}%;background:#8b5cf6"></div></div>`;
+      h+=`<div style="font-size:11px;color:var(--muted)">Вибірка угоди: <strong style="color:var(--text)">${r.pick.toFixed(1)}%</strong> <span style="opacity:.7">(скільки зі свого контракту вже поставив)</span></div>`;
+      h+='</div>';
+    }
+    if(rep.offContract>0){
+      h+=`<div style="border:1px dashed rgba(255,255,255,.15);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--muted)">Поза угодами (без зіставлення з тендером): <strong style="color:var(--text)">${money(rep.offContract)} грн</strong></div>`;
+    }
   }
   h+='</div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.4">«Закуплено» — фактична сума з Закуплено по зіставлених угодах (мультипостачальницькі поділено за розподілом). «Угода» — план: кількість×ціна з тендерів.</div>';
   h+='</div></div>';
+  setTimeout(()=>drawSupplierPie(_supPieMetric),0);
   return h;
+}
+function drawSupplierPie(metric){
+  metric=(metric==="contract")?"contract":"spend";_supPieMetric=metric;
+  const bS=document.getElementById("sup-pie-spend"),bC=document.getElementById("sup-pie-contract");
+  if(bS)bS.style.background=metric==="spend"?"rgba(34,197,94,.25)":"";
+  if(bC)bC.style.background=metric==="contract"?"rgba(139,92,246,.25)":"";
+  const cv=document.getElementById("sup-pie");if(!cv||!_supReport)return;
+  const ctx=cv.getContext("2d");if(!ctx)return;
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle="#23262b";ctx.fillRect(0,0,W,H);
+  const field=metric==="contract"?"contracted":"spend";
+  const total=metric==="contract"?_supReport.totContr:_supReport.totSpend;
+  let rows=_supReport.rows.filter(r=>r[field]>0).slice().sort((a,b)=>b[field]-a[field]);
+  const big=[];let othV=0;
+  for(const r of rows){if(total>0&&r[field]/total<0.02)othV+=r[field];else big.push(r);}
+  const slices=big.map(r=>({name:r.supplier,v:r[field]}));
+  if(othV>0)slices.push({name:"Інші",v:othV});
+  const colors=["#22c55e","#8b5cf6","#3b82f6","#f59e0b","#ef4444","#14b8a6","#ec4899","#84cc16","#f97316","#06b6d4","#a855f7","#eab308","#64748b"];
+  ctx.fillStyle="#e5e7eb";ctx.font="bold 22px sans-serif";ctx.textAlign="left";
+  ctx.fillText(metric==="contract"?"Доля угод (план)":"Доля закупівель (факт)",24,36);
+  const cx=190,cy=H/2+18,r=148;
+  let ang=-Math.PI/2;
+  if(!slices.length||total<=0){ctx.fillStyle="#94a3b8";ctx.font="16px sans-serif";ctx.fillText("Немає даних",cx-40,cy);return;}
+  slices.forEach((s,i)=>{
+    const a2=ang+(s.v/total)*2*Math.PI;
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,ang,a2);ctx.closePath();
+    ctx.fillStyle=colors[i%colors.length];ctx.fill();
+    ctx.strokeStyle="#23262b";ctx.lineWidth=2;ctx.stroke();ang=a2;
+  });
+  const lx=384,ly=64;ctx.font="15px sans-serif";ctx.textAlign="left";
+  slices.forEach((s,i)=>{
+    const y=ly+i*26;
+    ctx.fillStyle=colors[i%colors.length];ctx.fillRect(lx,y-12,15,15);
+    ctx.fillStyle="#e5e7eb";
+    const pct=(s.v/total*100).toFixed(1);
+    let nm=s.name.length>24?s.name.slice(0,23)+"…":s.name;
+    ctx.fillText(nm+" — "+pct+"%",lx+24,y);
+  });
+}
+function downloadSupplierPie(){
+  const cv=document.getElementById("sup-pie");if(!cv)return;
+  try{const a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download="postachalnyky_diagrama.png";document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){alert("Не вдалось зберегти PNG")}
+}
+function exportSupplierXlsx(){
+  if(!_supReport||!_supReport.rows.length){alert("Немає даних для експорту");return;}
+  if(typeof XLSX==="undefined"){alert("Бібліотека Excel не завантажилась");return;}
+  const aoa=[["Постачальник","Закуплено (грн)","Доля закупівель %","Угода (грн)","Доля угод %","Вибірка угоди %"]];
+  _supReport.rows.forEach(r=>aoa.push([r.supplier,Math.round(r.spend),+r.spendShare.toFixed(1),Math.round(r.contracted),+r.contractShare.toFixed(1),+r.pick.toFixed(1)]));
+  if(_supReport.offContract>0)aoa.push(["Поза угодами",Math.round(_supReport.offContract),null,null,null,null]);
+  aoa.push([]);
+  aoa.push(["РАЗОМ",Math.round(_supReport.totSpend),null,Math.round(_supReport.totContr),null,null]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"]=[{wch:44},{wch:16},{wch:16},{wch:16},{wch:13},{wch:15}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Постачальники");
+  XLSX.writeFile(wb,"postachalnyky_"+new Date().toISOString().slice(0,10)+".xlsx");
 }
 function removePending(key){
   if(event)event.stopPropagation();
