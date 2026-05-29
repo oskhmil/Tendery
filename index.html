@@ -2694,13 +2694,15 @@ function computeSupplierReport(){
   // Фактичні витрати: ps (реальна сума з Закуплено) для однопостачальницьких,
   // розподіл packs×ціна для мультипостачальницьких рядків.
   const spend={};let offContract=0;
+  const drugBy={}; // supplier -> {drugName: money}
   for(const r of (allData||[])){
     const sup=(r.t&&r.t[0])?r.t[0].s:null;
     let m=0;
     if(r.ps&&r.ps>0)m=r.ps;
     else if(r.dpq&&r.t&&r.t[0]&&r.t[0].p)m=r.dpq*r.t[0].p;
     if(m<=0)continue;
-    if(sup)spend[sup]=(spend[sup]||0)+m; else offContract+=m;
+    if(sup){spend[sup]=(spend[sup]||0)+m;if(!drugBy[sup])drugBy[sup]={};drugBy[sup][r.n]=(drugBy[sup][r.n]||0)+m;}
+    else offContract+=m;
   }
   const totSpend=Object.values(spend).reduce((a,b)=>a+b,0)+offContract;
   const totContr=Object.values(contracted).reduce((a,b)=>a+b,0);
@@ -2710,7 +2712,8 @@ function computeSupplierReport(){
     supplier:s, spend:spend[s]||0, contracted:contracted[s]||0,
     spendShare:totSpend>0?(spend[s]||0)/totSpend*100:0,
     contractShare:totContr>0?(contracted[s]||0)/totContr*100:0,
-    pick:(contracted[s]||0)>0?Math.min(100,(spend[s]||0)/(contracted[s]||0)*100):0
+    pick:(contracted[s]||0)>0?Math.min(100,(spend[s]||0)/(contracted[s]||0)*100):0,
+    top:Object.entries(drugBy[s]||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>({name:e[0],money:e[1]}))
   }));
   _supReport={rows,totSpend,totContr,offContract};
   return _supReport;
@@ -2745,6 +2748,15 @@ function buildSupplierReport(){
       h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:2px"><span>Угода (план)</span><span><strong style="color:var(--text)">${money(r.contracted)} грн</strong> · ${r.contractShare.toFixed(1)}% портфеля</span></div>`;
       h+=`<div style="height:6px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${r.contractShare.toFixed(1)}%;background:#8b5cf6"></div></div>`;
       h+=`<div style="font-size:11px;color:var(--muted)">Вибірка угоди: <strong style="color:var(--text)">${r.pick.toFixed(1)}%</strong> <span style="opacity:.7">(скільки зі свого контракту вже поставив)</span></div>`;
+      if(r.top&&r.top.length){
+        h+='<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)">';
+        h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Топ-3 по закупці</div>';
+        r.top.forEach((d,i)=>{
+          const nm=d.name.length>40?d.name.slice(0,39)+"…":d.name;
+          h+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:2px"><span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i+1}. ${esc(nm)}</span><span style="color:var(--muted);flex-shrink:0">${money(d.money)} грн</span></div>`;
+        });
+        h+='</div>';
+      }
       h+='</div>';
     }
     if(rep.offContract>0){
