@@ -810,6 +810,14 @@ let ordersManual=[];
 // Key: drugName + "|" + supplierName. Value: {ts: ISO date string, note: optional}
 let ordersPending={};
 
+// ── Sync metadata: per-item timestamps + tombstones for merge-based cloud sync ──
+let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}};
+let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}};
+let _manualTs=0;
+const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice};
+const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice"};
+
+
 // Manual-add dialog state
 let ordersAddDialog=false;
 let ordersAddQuery="";
@@ -1960,6 +1968,7 @@ function setVen(drugName,cat){
   // "E" is default, but we still save explicitly so that E chosen by user over auto-V persists
   venCategories[drugName]=cat;
   try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}
+  stampCat("ven");
   syncPushSoon();
 }
 function loadVen(){
@@ -1983,16 +1992,56 @@ function loadVen(){
   const ex=loadKey("_excluded");if(ex)ordersExcluded=ex||{};
   const hd=loadKey("_hidden");if(hd)ordersHidden=hd||{};
   const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
+  loadSyncMeta();
 }
-function saveManual(){try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}syncPushSoon()}
-function savePending(){try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}syncPushSoon()}
-function saveQtyOverride(){try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
-function saveExcluded(){try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
-function saveHidden(){try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}syncPushSoon()}
-function saveSupplierChoice(){try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
+function saveManual(){_manualTs=Date.now();try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}saveSyncMeta();syncPushSoon()}
+function savePending(){stampCat("pending");try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}syncPushSoon()}
+function saveQtyOverride(){stampCat("qty");try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
+function saveExcluded(){stampCat("excluded");try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
+function saveHidden(){stampCat("hidden");try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}syncPushSoon()}
+function saveSupplierChoice(){stampCat("supChoice");try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
 
 // ═══════ CLOUD SYNC ═══════
-// Збираємо весь user-state у один об'єкт для відправки
+// ── Merge-based sync helpers (LWW per item + tombstones) ──
+function _syncClone(o){try{return JSON.parse(JSON.stringify(o||{}))}catch(e){return{}}}
+function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;}
+function _syncPersistCat(cat){try{localStorage.setItem(USER_KEY+_SYNC_SUFFIX[cat],JSON.stringify(_SYNC_GET[cat]()))}catch(e){}}
+function saveSyncMeta(){try{localStorage.setItem(USER_KEY+"_meta",JSON.stringify({meta:_syncMeta,snap:_syncSnap,manualTs:_manualTs}))}catch(e){}}
+function loadSyncMeta(){
+  let loaded=false;
+  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
+  // Baseline snapshot = current loaded maps, so the first local diff is computed correctly.
+  // When no stored meta (first run / migration), reset every snapshot to the loaded map.
+  for(const cat of Object.keys(_SYNC_GET)){
+    if(!_syncMeta[cat])_syncMeta[cat]={};
+    if(!loaded||!_syncSnap[cat])_syncSnap[cat]=_syncClone(_SYNC_GET[cat]());
+  }
+}
+// Stamp local changes (diff current vs last snapshot) with timestamps / tombstones
+function stampCat(cat){
+  const cur=_SYNC_GET[cat]()||{},snap=_syncSnap[cat]||{},meta=_syncMeta[cat]||(_syncMeta[cat]={}),now=Date.now();
+  for(const k of Object.keys(cur)){if(!(k in snap)||JSON.stringify(snap[k])!==JSON.stringify(cur[k]))meta[k]={t:now};}
+  for(const k of Object.keys(snap)){if(!(k in cur))meta[k]={t:now,del:true};}
+  _syncSnap[cat]=_syncClone(cur);
+  const cut=now-90*864e5;for(const k of Object.keys(meta)){if(meta[k]&&meta[k].del&&meta[k].t<cut)delete meta[k];}
+  saveSyncMeta();
+}
+function _syncRec(k,map,meta){const m=meta[k];if(m)return{t:m.t||0,del:!!m.del,val:map[k]};if(Object.prototype.hasOwnProperty.call(map,k))return{t:0,del:false,val:map[k]};return null;}
+function _syncMergeMap(lMap,lMeta,rMap,rMeta){
+  lMap=lMap||{};lMeta=lMeta||{};rMap=rMap||{};rMeta=rMeta||{};
+  const keys=new Set([...Object.keys(lMap),...Object.keys(lMeta),...Object.keys(rMap),...Object.keys(rMeta)]);
+  const outMap={},outMeta={};
+  for(const k of keys){
+    const l=_syncRec(k,lMap,lMeta),r=_syncRec(k,rMap,rMeta);
+    let w;
+    if(!l&&!r)continue;else if(!l)w=r;else if(!r)w=l;
+    else if(r.t>l.t)w=r;else if(l.t>r.t)w=l;
+    else{if(l.del&&!r.del)w=r;else if(r.del&&!l.del)w=l;else w=l;}
+    if(w.del)outMeta[k]={t:w.t,del:true};else{outMap[k]=w.val;outMeta[k]={t:w.t};}
+  }
+  return{map:outMap,meta:outMeta};
+}
+// Збираємо весь user-state (+ метадані для злиття) для відправки
 function collectUserState(){
   return {
     ven: venCategories||{},
@@ -2002,21 +2051,28 @@ function collectUserState(){
     excluded: ordersExcluded||{},
     hidden: ordersHidden||{},
     supChoice: ordersSupplierChoice||{},
+    _meta: Object.assign({},_syncMeta,{manualTs:_manualTs}),
     _localTs: Date.now()
   };
 }
-// Застосовуємо state з сервера до локального стану і в localStorage
-function applyUserState(s){
+// Зливаємо стан із сервера з локальним (за часом, з тумбстоунами) — нічого не затираючи
+function mergeUserState(s){
   if(!s||typeof s!=="object")return false;
-  if(s.ven&&typeof s.ven==="object"){venCategories=s.ven;try{localStorage.setItem(USER_KEY+"_ven",JSON.stringify(venCategories))}catch(e){}}
-  if(Array.isArray(s.manual)){ordersManual=s.manual;try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}}
-  if(s.pending&&typeof s.pending==="object"){ordersPending=s.pending;try{localStorage.setItem(USER_KEY+"_pending",JSON.stringify(ordersPending))}catch(e){}}
-  if(s.qty&&typeof s.qty==="object"){ordersQtyOverride=s.qty;try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}}
-  if(s.excluded&&typeof s.excluded==="object"){ordersExcluded=s.excluded;try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}}
-  if(s.hidden&&typeof s.hidden==="object"){ordersHidden=s.hidden;try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}}
-  if(s.supChoice&&typeof s.supChoice==="object"){ordersSupplierChoice=s.supChoice;try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}}
-  return true;
+  const rMeta=(s._meta&&typeof s._meta==="object")?s._meta:{};
+  let changed=false;
+  for(const cat of Object.keys(_SYNC_GET)){
+    const before=JSON.stringify(_SYNC_GET[cat]());
+    const res=_syncMergeMap(_SYNC_GET[cat](),_syncMeta[cat]||{},(s[cat]&&typeof s[cat]==="object")?s[cat]:{},rMeta[cat]||{});
+    _syncSetCat(cat,res.map);_syncMeta[cat]=res.meta;_syncSnap[cat]=_syncClone(res.map);_syncPersistCat(cat);
+    if(JSON.stringify(res.map)!==before)changed=true;
+  }
+  const rManualTs=(typeof rMeta.manualTs==="number")?rMeta.manualTs:0;
+  if(Array.isArray(s.manual)&&rManualTs>_manualTs){ordersManual=s.manual;_manualTs=rManualTs;try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}changed=true;}
+  saveSyncMeta();
+  return changed;
 }
+// Сумісність зі старою назвою
+function applyUserState(s){return mergeUserState(s);}
 // Debounced push — accumulates changes, sends ~2s after last edit
 function syncPushSoon(){
   if(!_syncEnabled||!SYNC_URL)return;
@@ -2026,15 +2082,22 @@ function syncPushSoon(){
 async function syncPush(){
   if(!_syncEnabled||!SYNC_URL)return;
   _syncStatus="uploading";updateSyncIndicator();
+  let merged=false;
   try{
+    // read-merge-write: pull remote first and merge in, so a push never wipes other devices' changes
+    try{
+      const rr=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify({key:SYNC_KEY,action:"read"}),headers:{"Content-Type":"text/plain;charset=utf-8"}});
+      const rj=await rr.json();
+      if(rj.ok&&rj.state)merged=mergeUserState(rj.state);
+    }catch(e){/* if read fails, still push local below */}
     const body={key:SYNC_KEY,state:collectUserState()};
-    // Apps Script doPost expects text/plain to avoid CORS preflight
     const r=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"text/plain;charset=utf-8"}});
     const j=await r.json();
     if(j.ok){_syncStatus="ok";_syncLastTs=j.ts||Date.now()}
     else{_syncStatus="err";console.warn("sync push:",j.error)}
   }catch(e){_syncStatus="err";console.warn("sync push:",e)}
   updateSyncIndicator();
+  if(merged)render();
 }
 async function syncPull(silent){
   if(!_syncEnabled||!SYNC_URL)return false;
@@ -2045,12 +2108,10 @@ async function syncPull(silent){
     const r=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"text/plain;charset=utf-8"}});
     const j=await r.json();
     if(j.ok&&j.state){
-      // Only apply if remote has content (avoid wiping fresh local with empty remote on first run)
-      const s=j.state;
-      const hasContent=(s.ven&&Object.keys(s.ven).length)||(Array.isArray(s.manual)&&s.manual.length)||(s.pending&&Object.keys(s.pending).length)||(s.qty&&Object.keys(s.qty).length)||(s.excluded&&Object.keys(s.excluded).length)||(s.supChoice&&Object.keys(s.supChoice).length);
-      if(hasContent)applyUserState(s);
+      const changed=mergeUserState(j.state); // merge, never overwrite
       _syncStatus="ok";_syncLastTs=Date.now();
       updateSyncIndicator();
+      if(changed)render();
       return true;
     }else{_syncStatus="err";updateSyncIndicator();return false}
   }catch(e){_syncStatus="err";updateSyncIndicator();console.warn("sync pull:",e);return false}
