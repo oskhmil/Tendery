@@ -288,6 +288,10 @@ let currentFilter="all", currentSort="status";
 let expandedCard=null, expandedAgr=null;
 let purchasesRaw=null, tendersRaw=null;
 let parsedPurchases=null;
+let purchasesByWH={};       // {warehouseName: {drugName: qty}} — per-warehouse purchased qty for pending scoping
+// Ostap's own warehouse — pending marks auto-clear only on arrivals here (substring match, lowercased).
+// Overridable via the stable user key if the склад label ever changes.
+const MY_WAREHOUSE=(function(){try{return (localStorage.getItem("tendertrack_user_warehouse")||"пантелеймон").toLowerCase()}catch(e){return "пантелеймон"}})();
 let lastUpdated=null;
 let showAllCards=false;
 
@@ -830,7 +834,7 @@ render();
 
 // ═══════ CACHE ═══════
 function saveCache(){
-const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
+const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
 try{localStorage.setItem(CACHE_KEY,JSON.stringify(payload))}catch(e){
 console.warn("Cache full, saving without purchases",e);
 try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}))}catch{}
@@ -852,6 +856,7 @@ if(m.periodEnd)m.periodEnd=new Date(m.periodEnd);
 if(!Array.isArray(d.data))d.data=[];
 if(!Array.isArray(d.tenders))d.tenders=[];
 if(d.purchases&&(!Array.isArray(d.purchases)||!d.purchases.length||typeof d.purchases[0].name!=="string"))d.purchases=null;
+if(d.purchasesByWH&&typeof d.purchasesByWH!=="object")d.purchasesByWH=null;
 return d;
 }catch{return null}
 }
@@ -872,13 +877,16 @@ let hasNumericQty=false;
 for(let i=10;i<Math.min(rows.length,20);i++){const r=rows[i];if(r&&typeof r[6]==="number")hasNumericQty=true;}
 if(!hasNumericQty)throw new Error("Файл закупівель: не знайдено числових даних у колонці G (кількість). Можливо формат файлу змінився.");
 const drugs={};
+purchasesByWH={};
+let currentWH=null;
 for(let i=10;i<rows.length;i++){
 const r=rows[i];if(!r||!r[0])continue;
 const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=r[3],f=r[5],g=r[6],h=r[7];
-if(g&&!d&&!f)continue;
+if(!d&&!f){ if(String(a).toLowerCase().includes("склад"))currentWH=a; continue; } // grouping header; track warehouse
 if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
 if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
 drugs[a].qty+=g||0;drugs[a].sum+=(typeof h==="number"?h:0);
+if(currentWH){if(!purchasesByWH[currentWH])purchasesByWH[currentWH]={};purchasesByWH[currentWH][a]=(purchasesByWH[currentWH][a]||0)+(g||0)}
 }
 }
 if(!Object.keys(drugs).length)throw new Error("Файл закупівель: не знайдено жодного препарату. Перевірте формат файлу.");
@@ -1238,7 +1246,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;showMain();fetchDriveBackground();return}}
+if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;showMain();fetchDriveBackground();return}}
 showLoader(isRefresh?"Оновлюємо актуальні дані...":"Завантажуємо актуальні дані...");
 await fetchDriveBackground(true);
 }
@@ -2629,7 +2637,7 @@ function buildPendingDialog(){
   h+='<div onclick="closePendingDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:105;display:flex;align-items:center;justify-content:center;padding:8px">';
   h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:600px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
   h+=`<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#c4b5fd">⏳ Позиції, що очікуються (${keys.length})</div>`;
-  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається при будь-якому надходженні у Формі 6.</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається, коли препарат надходить у Закуплено на твій склад (Пантелеймона). Резерв — зростання надходження у Формі 6.</div>';
   if(!keys.length){
     h+='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Нічого не очікується</div>';
   }else{
@@ -2651,6 +2659,17 @@ function buildPendingDialog(){
       h+=`<div style="font-size:10px;color:var(--accent)">Постачальник: ${esc(p.supplier||"?")}</div>`;
       h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">`;
       if(d)h+=`${d.toLocaleDateString("uk-UA")} (${daysSince}д тому)`;
+      h+=`</div>`;
+      // Закуплено tracking (primary trigger) — scoped to Ostap's own warehouse
+      const curPurch=(typeof purchasedForDrugMyWarehouse==="function")?purchasedForDrugMyWarehouse(p.drugName):null;
+      h+=`<div style="font-size:10px;margin-top:4px;padding:4px 8px;background:rgba(20,24,30,.6);border-radius:4px;color:var(--muted)">`;
+      h+=`Закуплено (мій склад) при позначці: <strong>${p.purchasedAtMark!=null?p.purchasedAtMark:"—"}</strong> · Зараз: <strong>${curPurch!=null?curPurch:"—"}</strong>`;
+      if(p.purchasedAtMark!=null&&curPurch!=null){
+        if(curPurch>p.purchasedAtMark)h+=` · <span style="color:#86efac">прихід +${Math.round((curPurch-p.purchasedAtMark)*100)/100}</span>`;
+        else h+=` · <span style="color:#fca5a5">без приходу</span>`;
+      }else if(p.purchasedAtMark==null){
+        h+=` · <span style="color:#fbbf24">позначено до оновлення — зніми вручну ✕</span>`;
+      }
       h+=`</div>`;
       // Diagnostic block — F6 tracking status
       if(!f6n){
@@ -2779,6 +2798,45 @@ function totalIncomeForDrug(drugName){
   }
   return total;
 }
+// Total purchased quantity for a drug from Закуплено (cumulative — grows on new arrivals).
+// Maps the orders/F6 name to its purchase record via findInMonitor, then reads qty.
+// Returns null if no purchase record found.
+function totalPurchasedForDrug(drugName){
+  if(!parsedPurchases||!parsedPurchases.length)return null;
+  let purchName=drugName;
+  if(typeof findInMonitor==="function"){
+    const m=findInMonitor(drugName);
+    if(m&&m.n)purchName=m.n;
+  }
+  for(const p of parsedPurchases){if(p.name===purchName)return p.qty;}
+  for(const p of parsedPurchases){if(p.name===drugName)return p.qty;}
+  return null;
+}
+// Purchased quantity for a drug ONLY at Ostap's own warehouse (MY_WAREHOUSE).
+// Used for pending auto-removal so arrivals to other 1ТМО warehouses don't clear his marks.
+// Returns null if no matching warehouse/drug found.
+function purchasedForDrugMyWarehouse(drugName){
+  if(!purchasesByWH||!Object.keys(purchasesByWH).length)return null;
+  let purchName=drugName;
+  if(typeof findInMonitor==="function"){
+    const m=findInMonitor(drugName);
+    if(m&&m.n)purchName=m.n;
+  }
+  let total=null;
+  for(const wh of Object.keys(purchasesByWH)){
+    if(!wh.toLowerCase().includes(MY_WAREHOUSE))continue;
+    const q=purchasesByWH[wh][purchName];
+    if(typeof q==="number")total=(total||0)+q;
+  }
+  if(total==null){ // fallback: try the raw drug name as key
+    for(const wh of Object.keys(purchasesByWH)){
+      if(!wh.toLowerCase().includes(MY_WAREHOUSE))continue;
+      const q=purchasesByWH[wh][drugName];
+      if(typeof q==="number")total=(total||0)+q;
+    }
+  }
+  return total;
+}
 // Resolve the F6 name corresponding to a drug — F6 names and purchase names may differ slightly.
 // Uses findInMonitor reverse lookup. Returns the F6 drug name if found.
 function resolveF6Name(drugName){
@@ -2842,14 +2900,23 @@ function cleanupPendingByIncome(){
   let changed=false;
   for(const key of Object.keys(ordersPending)){
     const p=ordersPending[key];
-    if(!p||p.incomeAtMark==null)continue;  // skip old-style marks without snapshot
-    const f6n=resolveF6Name(p.drugName);
-    if(!f6n)continue;
-    const currentIncome=totalIncomeForDrug(f6n);
-    if(currentIncome>p.incomeAtMark){
-      delete ordersPending[key];
-      changed=true;
+    if(!p)continue;
+    let remove=false;
+    // (A) Primary: purchased qty at Ostap's OWN warehouse grew since the mark — a real arrival to him.
+    // Scoped per-warehouse so arrivals to other 1ТМО warehouses don't falsely clear the mark.
+    if(p.purchasedAtMark!=null){
+      const curP=purchasedForDrugMyWarehouse(p.drugName);
+      if(curP!=null&&curP>p.purchasedAtMark)remove=true;
     }
+    // (B) Fallback (legacy marks): Форма 6 income grew since the mark.
+    if(!remove&&p.incomeAtMark!=null){
+      const f6n=resolveF6Name(p.drugName);
+      if(f6n){
+        const currentIncome=totalIncomeForDrug(f6n);
+        if(currentIncome>p.incomeAtMark)remove=true;
+      }
+    }
+    if(remove){delete ordersPending[key];changed=true;}
   }
   if(changed)savePending();
 }
@@ -2860,14 +2927,16 @@ function togglePending(gi,ii,checked){
   const it=g.items[ii];if(!it)return;
   const key=it.drugName+"|"+g.name;
   if(checked){
-    // Snapshot the current F6 total income; if it grows later → auto-remove
+    // Snapshot current Закуплено qty (primary) + F6 income (fallback); if either grows later → auto-remove
     const f6n=resolveF6Name(it.drugName);
     const incomeAtMark=f6n?totalIncomeForDrug(f6n):0;
+    const purchasedAtMark=(typeof purchasedForDrugMyWarehouse==="function")?purchasedForDrugMyWarehouse(it.drugName):null;
     ordersPending[key]={
       ts:new Date().toISOString(),
       drugName:it.drugName,
       supplier:g.name,
       incomeAtMark,
+      purchasedAtMark,
       f6Name:f6n||null,
     };
   }else{
@@ -3384,6 +3453,7 @@ if(c){
 allData=c.data||[];allTenders=c.tenders||[];
 lastUpdated=c.ts?new Date(c.ts):null;
 if(c.purchases)parsedPurchases=c.purchases;
+if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;
 if(Array.isArray(c.f6))f6Months=c.f6;
 if(c.f6ts)f6LastUpdated=new Date(c.f6ts);
 if(allData.length)fetchDriveBackground();
