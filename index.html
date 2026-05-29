@@ -2752,8 +2752,7 @@ function buildSupplierReport(){
         h+='<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)">';
         h+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Топ-3 по закупці</div>';
         r.top.forEach((d,i)=>{
-          const nm=d.name.length>40?d.name.slice(0,39)+"…":d.name;
-          h+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:2px"><span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i+1}. ${esc(nm)}</span><span style="color:var(--muted);flex-shrink:0">${money(d.money)} грн</span></div>`;
+          h+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:3px;align-items:flex-start"><span style="color:var(--text);line-height:1.35">${i+1}. ${esc(d.name)}</span><span style="color:var(--muted);flex-shrink:0;white-space:nowrap">${money(d.money)} грн</span></div>`;
         });
         h+='</div>';
       }
