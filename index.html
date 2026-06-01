@@ -1557,6 +1557,12 @@ if(supplierReportDialog){
 }
 }
 
+function toggleMonitorCard(idx){
+  const n=(window._monCards||[])[idx];
+  if(n==null)return;
+  expandedCard=(expandedCard===n)?null:n;
+  render();
+}
 function renderMonitor(el){
 const counts={all:allData.length,exhausted:0,critical:0,warning:0,ok:0,idle:0,none:0};
 allData.forEach(d=>counts[gs(d)]++);
@@ -1596,13 +1602,13 @@ h+='<div class="sort-row"><div class="sort-btns"><span>Сорт.:</span>';
 for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Міс ↑"],["pct","% ↓"]])h+=`<button class="sort-btn${currentSort===k?" active":""}" onclick="currentSort='${k}';render()">${l}</button>`;
 h+=`</div><span style="font-size:12px;color:var(--muted)">${items.length} поз.</span></div>`;
 if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
-else items.forEach(d=>{
+else {window._monCards=items.map(x=>x.n);items.forEach((d,idx)=>{
 const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
 const hasConflict=d.multi&&!d.alloc&&!d.chosen;
 const mnn=d.t.length?d.t[0].mn:"";
 const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
 const mbT=s==="idle"?"Без руху":d.ml<=0?"Вичерпано":d.ml===999?"—":d.ml+" міс";
-h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="expandedCard=expandedCard==='${esc(d.n).replace(/'/g,"\\'")}' ?null:'${esc(d.n).replace(/'/g,"\\'")}';render()">`;
+h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="toggleMonitorCard(${idx})">`;
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
 h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q:"")}</div>`;
@@ -1652,7 +1658,7 @@ d.t.forEach(t=>{
 });
 if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
 h+=`</div></div>`;
-});
+});}
 }else{
 h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size:13px">💡 Оберіть категорію вище або введіть назву в пошук</div>';
 }
@@ -1674,7 +1680,7 @@ let h=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${arr.le
 arr.forEach(a=>{
 const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
 const tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
-h+=`<div class="agr-card${isE?" expanded":""}" onclick="expandedAgr=expandedAgr==='${k.replace(/'/g,"\\'")}'?null:'${k.replace(/'/g,"\\'")}';render()">`;
+h+=`<div class="agr-card${isE?" expanded":""}" onclick="expandedAgr=expandedAgr==='${k.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}'?null:'${k.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}';render()">`;
 h+=`<div class="agr-sup">${hl(a.supplier,searchMode==="supplier"?q:"")}</div>`;
 h+=`<div class="agr-con">${hl(a.contract,searchMode==="contract"?q:"")}</div>`;
 h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
