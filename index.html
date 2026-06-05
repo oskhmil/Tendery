@@ -990,7 +990,7 @@ drugs[nm]={unit,start:startQ,income:incomeQ,used:usedQ,end:endQ};
 months.push({sheet:sn,periodStart,periodEnd,days,drugs});
 }
 if(!months.length)throw new Error("Форма 6: не знайдено жодного листа з коректним періодом. Перевірте формат (рядок 9 має містити 'за період з DD.MM.YYYY до DD.MM.YYYY').");
-months.sort((a,b)=>a.periodStart-b.periodStart);
+months.sort((a,b)=>(a.periodEnd-b.periodEnd)||(a.periodStart-b.periodStart));
 return months;
 }
 
@@ -3314,6 +3314,7 @@ render();
 function setOrderQty(gi,ii,v){
 const g=(window._ordersGroups||[])[gi];if(!g)return;
 const it=g.items[ii];if(!it)return;
+if(it.manual){setManualPacks(it.manualId,v);return;} // manual lines store qty in the manual array, not in overrides
 const n=Math.max(0,parseInt(v)||0);
 if(n===it.autoPacks){
   delete ordersQtyOverride[it.drugName];
