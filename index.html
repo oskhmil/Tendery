@@ -2858,7 +2858,7 @@ function buildPendingDialog(){
   h+='<div onclick="closePendingDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:105;display:flex;align-items:center;justify-content:center;padding:8px">';
   h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:600px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
   h+=`<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:#c4b5fd">⏳ Позиції, що очікуються (${keys.length})</div>`;
-  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається, коли препарат надходить у Закуплено на твій склад (Пантелеймона). Резерв — зростання надходження у Формі 6.</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Автоматично знімається лише коли препарат надходить у Закуплено на твій склад (Пантелеймона). Форма 6 на це не впливає.</div>';
   if(!keys.length){
     h+='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Нічого не очікується</div>';
   }else{
@@ -3122,22 +3122,13 @@ function cleanupPendingByIncome(){
   for(const key of Object.keys(ordersPending)){
     const p=ordersPending[key];
     if(!p)continue;
-    let remove=false;
-    // (A) Primary: purchased qty at Ostap's OWN warehouse grew since the mark — a real arrival to him.
-    // Scoped per-warehouse so arrivals to other 1ТМО warehouses don't falsely clear the mark.
+    // Auto-remove ONLY when purchased qty at Ostap's OWN warehouse grew since the mark — a real arrival.
+    // Форма 6 income is deliberately NOT used: it isn't warehouse-specific and changes when the report
+    // period is updated, which falsely cleared pending marks even though no purchase had arrived.
     if(p.purchasedAtMark!=null){
       const curP=purchasedForDrugMyWarehouse(p.drugName);
-      if(curP!=null&&curP>p.purchasedAtMark)remove=true;
+      if(curP!=null&&curP>p.purchasedAtMark){delete ordersPending[key];changed=true;}
     }
-    // (B) Fallback (legacy marks): Форма 6 income grew since the mark.
-    if(!remove&&p.incomeAtMark!=null){
-      const f6n=resolveF6Name(p.drugName);
-      if(f6n){
-        const currentIncome=totalIncomeForDrug(f6n);
-        if(currentIncome>p.incomeAtMark)remove=true;
-      }
-    }
-    if(remove){delete ordersPending[key];changed=true;}
   }
   if(changed)savePending();
 }
