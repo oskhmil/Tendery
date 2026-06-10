@@ -290,6 +290,7 @@ let expandedCard=null, expandedAgr=null;
 let purchasesRaw=null, tendersRaw=null;
 let parsedPurchases=null;
 let purchasesByWH={};       // {warehouseName: {drugName: qty}} — per-warehouse purchased qty for pending scoping
+let purchasesMonthly={};    // {drugName: {"YYYY-MM": money}} — spend per month from document rows (накладні)
 // Ostap's own warehouse — pending marks auto-clear only on arrivals here (substring match, lowercased).
 // Overridable via the stable user key if the склад label ever changes.
 const MY_WAREHOUSE=(function(){try{return (localStorage.getItem("tendertrack_user_warehouse")||"пантелеймон").toLowerCase()}catch(e){return "пантелеймон"}})();
@@ -844,7 +845,7 @@ render();
 
 // ═══════ CACHE ═══════
 function saveCache(){
-const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
+const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,purchasesMonthly:purchasesMonthly,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
 try{localStorage.setItem(CACHE_KEY,JSON.stringify(payload))}catch(e){
 console.warn("Cache full, saving without purchases",e);
 try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}))}catch{}
@@ -888,16 +889,24 @@ for(let i=10;i<Math.min(rows.length,20);i++){const r=rows[i];if(r&&typeof r[6]==
 if(!hasNumericQty)throw new Error("Файл закупівель: не знайдено числових даних у колонці G (кількість). Можливо формат файлу змінився.");
 const drugs={};
 purchasesByWH={};
-let currentWH=null;
+purchasesMonthly={};
+let currentWH=null,curMonthlyDrug=null;
+const reDocDate=/від\s+(\d{2})\.(\d{2})\.(\d{4})/;
 for(let i=10;i<rows.length;i++){
 const r=rows[i];if(!r||!r[0])continue;
 const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=r[3],f=r[5],g=r[6],h=r[7];
-if(!d&&!f){ if(String(a).toLowerCase().includes("склад"))currentWH=a; continue; } // grouping header; track warehouse
-if(d&&f&&g&&typeof g==="number"&&!a.startsWith("Надходження")){
+if(a.startsWith("Надходження")){ // document row under current drug: attribute money to its month
+  const m=a.match(reDocDate);
+  if(m&&typeof h==="number"&&curMonthlyDrug){const key=m[3]+"-"+m[2];if(!purchasesMonthly[curMonthlyDrug])purchasesMonthly[curMonthlyDrug]={};purchasesMonthly[curMonthlyDrug][key]=(purchasesMonthly[curMonthlyDrug][key]||0)+h;}
+  continue;
+}
+if(!d&&!f){ if(String(a).toLowerCase().includes("склад"))currentWH=a; curMonthlyDrug=null; continue; } // grouping header; track warehouse
+if(d&&f&&g&&typeof g==="number"){
 if(!drugs[a])drugs[a]={unit:String(f),qty:0,sum:0};
 drugs[a].qty+=g||0;drugs[a].sum+=(typeof h==="number"?h:0);
 if(currentWH){if(!purchasesByWH[currentWH])purchasesByWH[currentWH]={};purchasesByWH[currentWH][a]=(purchasesByWH[currentWH][a]||0)+(g||0)}
-}
+curMonthlyDrug=a;
+}else curMonthlyDrug=null;
 }
 if(!Object.keys(drugs).length)throw new Error("Файл закупівель: не знайдено жодного препарату. Перевірте формат файлу.");
 return Object.entries(drugs).sort((a,b)=>a[0].localeCompare(b[0],"uk"))
@@ -1256,7 +1265,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;showMain();fetchDriveBackground();return}}
+if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;if(c.purchasesMonthly)purchasesMonthly=c.purchasesMonthly;showMain();fetchDriveBackground();return}}
 showLoader(isRefresh?"Оновлюємо актуальні дані...":"Завантажуємо актуальні дані...");
 await fetchDriveBackground(true);
 }
@@ -2721,7 +2730,20 @@ function computeSupplierReport(){
     pick:(contracted[s]||0)>0?Math.min(100,(spend[s]||0)/(contracted[s]||0)*100):0,
     top:Object.entries(drugBy[s]||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>({name:e[0],money:e[1]}))
   }));
-  _supReport={rows,totSpend,totContr,offContract};
+  // Помісячна деталізація: препарат→місяць→сума (з накладних) + препарат→постачальник (з matched)
+  const drug2sup={};
+  for(const r of (allData||[])){if(r.t&&r.t[0]&&r.t[0].s)drug2sup[r.n]=r.t[0].s;}
+  const monthly={}; // {"YYYY-MM": {supplier: money, _off: money, _tot: money}}
+  for(const dn of Object.keys(purchasesMonthly||{})){
+    const sup=drug2sup[dn]||null;
+    for(const [mk,v] of Object.entries(purchasesMonthly[dn])){
+      if(!monthly[mk])monthly[mk]={_off:0,_tot:0};
+      monthly[mk]._tot+=v;
+      if(sup)monthly[mk][sup]=(monthly[mk][sup]||0)+v; else monthly[mk]._off+=v;
+    }
+  }
+  const monthKeys=Object.keys(monthly).sort();
+  _supReport={rows,totSpend,totContr,offContract,monthly,monthKeys};
   return _supReport;
 }
 function buildSupplierReport(){
@@ -2746,6 +2768,27 @@ function buildSupplierReport(){
     h+='<button onclick="downloadSupplierPie()" class="exp-btn" style="color:#60a5fa;border-color:#60a5fa">⬇ PNG</button></div>';
     h+='<canvas id="sup-pie" width="760" height="420" style="width:100%;border-radius:6px;display:block"></canvas></div>';
     h+='<div style="font-size:10px;color:var(--muted);margin:2px 0 4px;line-height:1.4">🟢 Зелена смужка — частка від усіх <b>витрат</b> (хто скільки грошей вибрав). 🟣 Фіолетова — частка від усіх <b>угод</b> (тендерного портфеля).</div>';
+    // ── Помісячна деталізація ──
+    if(rep.monthKeys&&rep.monthKeys.length){
+      const MN={"01":"Січень","02":"Лютий","03":"Березень","04":"Квітень","05":"Травень","06":"Червень","07":"Липень","08":"Серпень","09":"Вересень","10":"Жовтень","11":"Листопад","12":"Грудень"};
+      h+='<div style="border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);border-radius:10px;padding:10px 12px">';
+      h+='<div style="font-weight:700;font-size:13px;margin-bottom:2px">📅 Помісячно</div>';
+      h+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Суми та доля кожного постачальника за місяць (з дат накладних). Нижче — разом станом на '+new Date().toLocaleDateString("uk-UA")+'.</div>';
+      for(const mk of rep.monthKeys){
+        const m=rep.monthly[mk];
+        const sups=Object.keys(m).filter(k=>k!=="_off"&&k!=="_tot").sort((a,b)=>m[b]-m[a]);
+        const mLabel=(MN[mk.slice(5)]||mk.slice(5))+" "+mk.slice(0,4);
+        h+=`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:2px;margin-bottom:3px"><span>${mLabel}</span><span>${money(m._tot)} грн</span></div>`;
+        for(const s of sups){
+          const pct=m._tot>0?(m[s]/m._tot*100):0;
+          h+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);padding:1px 0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s)}</span><span style="flex-shrink:0"><strong style="color:var(--text)">${money(m[s])}</strong> · ${pct.toFixed(1)}%</span></div>`;
+        }
+        if(m._off>0)h+=`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding:1px 0;font-style:italic"><span>Поза угодами</span><span>${money(m._off)} · ${(m._tot>0?m._off/m._tot*100:0).toFixed(1)}%</span></div>`;
+        h+='</div>';
+      }
+      h+='</div>';
+      h+='<div style="font-weight:700;font-size:13px;margin:4px 0 0">Разом станом на '+new Date().toLocaleDateString("uk-UA")+'</div>';
+    }
     for(const r of rep.rows){
       h+='<div style="border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:10px;padding:10px 12px">';
       h+=`<div style="font-weight:600;font-size:13px;margin-bottom:8px">${esc(r.supplier)}</div>`;
@@ -2827,6 +2870,33 @@ function exportSupplierXlsx(){
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"]=[{wch:44},{wch:16},{wch:16},{wch:16},{wch:13},{wch:15}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Постачальники");
+  // Лист 2: помісячна матриця постачальник × місяці
+  if(_supReport.monthKeys&&_supReport.monthKeys.length){
+    const MN={"01":"Січ","02":"Лют","03":"Бер","04":"Кві","05":"Тра","06":"Чер","07":"Лип","08":"Сер","09":"Вер","10":"Жов","11":"Лис","12":"Гру"};
+    const mks=_supReport.monthKeys;
+    const head=["Постачальник",...mks.map(mk=>(MN[mk.slice(5)]||mk.slice(5))+" "+mk.slice(0,4)),"Разом"];
+    const supSet=new Set();
+    mks.forEach(mk=>Object.keys(_supReport.monthly[mk]).forEach(k=>{if(k!=="_off"&&k!=="_tot")supSet.add(k);}));
+    const supsM=[...supSet].sort((a,b)=>{
+      const tA=mks.reduce((s,mk)=>s+(_supReport.monthly[mk][a]||0),0);
+      const tB=mks.reduce((s,mk)=>s+(_supReport.monthly[mk][b]||0),0);
+      return tB-tA;});
+    const aoa2=[head];
+    for(const s of supsM){
+      const row=[s];let t=0;
+      for(const mk of mks){const v=_supReport.monthly[mk][s]||0;row.push(v?Math.round(v):null);t+=v;}
+      row.push(Math.round(t));aoa2.push(row);
+    }
+    const offRow=["Поза угодами"];let offT=0;
+    for(const mk of mks){const v=_supReport.monthly[mk]._off||0;offRow.push(v?Math.round(v):null);offT+=v;}
+    offRow.push(Math.round(offT));if(offT>0)aoa2.push(offRow);
+    const totRow=["РАЗОМ"];let tt=0;
+    for(const mk of mks){const v=_supReport.monthly[mk]._tot||0;totRow.push(Math.round(v));tt+=v;}
+    totRow.push(Math.round(tt));aoa2.push(totRow);
+    const ws2=XLSX.utils.aoa_to_sheet(aoa2);
+    ws2["!cols"]=[{wch:44},...mks.map(()=>({wch:13})),{wch:14}];
+    XLSX.utils.book_append_sheet(wb,ws2,"Помісячно");
+  }
   XLSX.writeFile(wb,"postachalnyky_"+new Date().toISOString().slice(0,10)+".xlsx");
 }
 function removePending(key){
@@ -3666,7 +3736,7 @@ if(c){
 allData=c.data||[];allTenders=c.tenders||[];
 lastUpdated=c.ts?new Date(c.ts):null;
 if(c.purchases)parsedPurchases=c.purchases;
-if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;
+if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;if(c.purchasesMonthly)purchasesMonthly=c.purchasesMonthly;
 if(Array.isArray(c.f6))f6Months=c.f6;
 if(c.f6ts)f6LastUpdated=new Date(c.f6ts);
 if(allData.length)fetchDriveBackground();
