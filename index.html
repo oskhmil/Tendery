@@ -3509,15 +3509,20 @@ render();
 // Standard header inserted at top of every outgoing order message
 const ORDER_HEADER="Замовлення 1ТМО Львів, вул. Миколайчука, 9.\nОстап 066-795-92-61, 097-045-12-55.";
 
+// Items eligible for export/sending: visible, not hidden, and NOT already ordered (очікується)
+function _exportableItems(g){
+  return g.items.filter(it=>{
+    if(!_orderVisible(it,g.name))return false;
+    if(ordersHidden[it.drugName+"|"+g.name])return false;
+    if(ordersPending[it.drugName+"|"+g.name])return false; // вже замовлено — не дублюємо в нове замовлення
+    return true;
+  });
+}
 function buildOrderText(gi){
 const g=(window._ordersGroups||[])[gi];
 if(!g)return"";
-// Apply all active filters (budget/VEN/ABC). Hidden items always excluded from output.
-const visible=g.items.filter(it=>{
-  if(!_orderVisible(it,g.name))return false;
-  if(ordersHidden[it.drugName+"|"+g.name])return false;
-  return true;
-});
+// Apply all active filters (budget/VEN/ABC). Hidden and pending items always excluded from output.
+const visible=_exportableItems(g);
 if(!visible.length)return"";
 let txt=ORDER_HEADER+"\n\n";
 txt+=`Постачальник: ${g.name}\n\n`;
@@ -3583,11 +3588,7 @@ function exportOrderCSV(gi){
 if(event)event.stopPropagation();
 const g=(window._ordersGroups||[])[gi];
 if(!g)return;
-const visible=g.items.filter(it=>{
-  if(!_orderVisible(it,g.name))return false;
-  if(ordersHidden[it.drugName+"|"+g.name])return false;
-  return true;
-});
+const visible=_exportableItems(g);
 const rows=[["№","VEN","Назва","Угода","Замовити (уп)","Розмір уп.","К-сть в закуп.од.","Од.вим.","Ціна/уп","Сума"]];
 let total=0;
 visible.forEach((it,i)=>{
@@ -3610,11 +3611,7 @@ function _shorterOrderText(gi){
   // Produce a compact version (no empty lines between items, no decorators)
   const g=(window._ordersGroups||[])[gi];
   if(!g)return"";
-  const visible=g.items.filter(it=>{
-    if(!_orderVisible(it,g.name))return false;
-    if(ordersHidden[it.drugName+"|"+g.name])return false;
-    return true;
-  });
+  const visible=_exportableItems(g);
   if(!visible.length)return"";
   let txt=ORDER_HEADER+"\n\n";
   txt+=`Постачальник: ${g.name}\n\n`;
