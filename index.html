@@ -171,7 +171,7 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 <div class="top-row">
 <div>
 <div class="logo" onclick="goHome()"><div class="logo-ico">TT</div><div><span style="color:var(--accent)">Tender</span><span style="color:#a3e635">Track</span></div></div>
-<div class="dev-credit">Developed by Ostap Khmil <span style="color:var(--muted);font-size:11px">v65</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
+<div class="dev-credit">Developed by Ostap Khmil <span id="app-ver" style="color:var(--muted);font-size:11px">v65</span> <span id="sync-ind" onclick="event.stopPropagation();syncMenu()" style="cursor:pointer;margin-left:8px;font-size:13px;color:var(--muted)" title="Синхронізація">☁</span></div>
 </div>
 <div class="header-btns hidden" id="nav-btns">
 <button class="hbtn active" id="btn-monitor" onclick="switchView('monitor')">Моніторинг закупівель</button>
@@ -274,7 +274,10 @@ mark{background:rgba(250,204,21,.5);color:inherit;border-radius:2px;padding:0 2p
 const GDRIVE_P = "https://docs.google.com/spreadsheets/d/1wcVo31MfSOhMDBe2Fz4VhHzKHf7wOpxN/export?format=xlsx";
 const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSlzorls3XTxf/export?format=xlsx";
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
-const CACHE_KEY = "tendertrack_v65";
+// Single source of truth for app version. Bump this on every release —
+// footer, CACHE_KEY and the update-checker all derive from it.
+const APP_VERSION = 65;
+const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
 const USER_KEY = "tendertrack_user";
@@ -3769,6 +3772,36 @@ h+=`</div>`;
 el.innerHTML=h;
 }
 
+// ═══════ АВТОПЕРЕВІРКА НОВОЇ ВЕРСІЇ ═══════
+// Тягне свіжий index.html з сервера (обхід CDN/браузерного кешу через
+// унікальний query-параметр + no-store), порівнює APP_VERSION.
+// Якщо на сервері новіша — показує банер "Доступна нова версія".
+let _verBannerShown=false;
+function checkAppVersion(){
+  try{
+    fetch(location.pathname+"?_vc="+Date.now(),{cache:"no-store"})
+      .then(r=>r.ok?r.text():"")
+      .then(html=>{
+        const m=html.match(/const APP_VERSION\s*=\s*(\d+)/);
+        if(!m)return;
+        const remote=parseInt(m[1],10);
+        if(remote>APP_VERSION)showUpdateBanner(remote);
+      })
+      .catch(()=>{}); // офлайн/file:// — мовчки ігноруємо
+  }catch(e){}
+}
+function showUpdateBanner(remoteV){
+  if(_verBannerShown)return;
+  _verBannerShown=true;
+  const b=document.createElement("div");
+  b.id="update-banner";
+  b.style.cssText="position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:300;background:rgba(20,24,30,.97);border:1.5px solid var(--accent);border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:92vw";
+  b.innerHTML='<span style="font-size:13px;color:#fff">🔄 Доступна нова версія <strong>v'+remoteV+'</strong></span>'+
+    '<button onclick="location.href=location.pathname+\'?v=\'+'+remoteV+'" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Оновити</button>'+
+    '<span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--muted);font-size:16px;padding:0 2px">×</span>';
+  document.body.appendChild(b);
+}
+
 // ═══════ INIT ═══════
 (function(){
 const c=loadCache();
@@ -3800,8 +3833,15 @@ syncPull(false).then(changed=>{
 // Auto-pull when tab becomes visible again (e.g. user switches back from another tab/app).
 // Cheap, battery-friendly — no polling. Throttled: minimum 10 sec between pulls.
 let _lastVisPull=Date.now();
+// Версія у футері — з єдиного джерела APP_VERSION
+const _av=document.getElementById("app-ver");if(_av)_av.textContent="v"+APP_VERSION;
+// Перевірка нової версії: через 4с після старту (не блокує завантаження)
+setTimeout(checkAppVersion,4000);
+// …і при поверненні у вкладку, не частіше ніж раз на 10 хв
+let _lastVerCheck=Date.now();
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState!=="visible")return;
+  if(Date.now()-_lastVerCheck>600000){_lastVerCheck=Date.now();checkAppVersion()}
   if(Date.now()-_lastVisPull<10000)return;
   _lastVisPull=Date.now();
   syncPull(true).then(changed=>{
