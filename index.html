@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 65;
+const APP_VERSION = 67;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1110,7 +1110,24 @@ function containersOk(p,t){
 function extractPkStrict(n){const m=n.match(/[№#]\s*(\d+)/);return m?parseInt(m[1]):0}
 function getDoses(s){const d=new Set();for(const m of norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){const v=m[1].replace(",","."),u=m[2];if(u==="Г")try{d.add(String(Math.round(parseFloat(v)*1000))+"МГ")}catch{d.add(v+"Г")}else d.add(v+u)}return d}
 function getVolumes(s){const u=s.toUpperCase().replace(/\u00a0/g," "),v=new Set();for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*МЛ/g))v.add(parseFloat(m[1].replace(",",".")));for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*Л[\s.,)]/g))v.add(parseFloat(m[1].replace(",","."))*1000);return v}
-function tokMatch(pt,tt){if(!pt.length||!tt.length)return false;const p0=pt[0],t0=tt[0];if(p0===t0)return true;const pp=p0.split("-"),tp=t0.split("-");if((pp.length>1||tp.length>1)&&pp[0]===tp[0]&&pp[0].length>=4)return true;if(p0.length>=6&&t0.startsWith(p0))return true;if(t0.length>=6&&p0.startsWith(t0))return true;const ps=stemUk(p0),ts=stemUk(t0);if(ps===ts&&ps.length>=5)return true;if(ps.length>=5&&ts.startsWith(ps))return true;if(ts.length>=5&&ps.startsWith(ts))return true;if(pp.length>1||tp.length>1){const pps=stemUk(pp[0]),tps=stemUk(tp[0]);if(pps===tps&&pps.length>=4)return true;if(pps.length>=5&&tps.startsWith(pps))return true;if(tps.length>=5&&pps.startsWith(tps))return true}const pn=p0.replace(/И/g,"І"),tn=t0.replace(/И/g,"І");if(pn===tn&&pn.length>=4)return true;if(pn.length>=6&&tn.startsWith(pn))return true;if(tn.length>=6&&pn.startsWith(tn))return true;if(pt.length>=2){const c=pt.slice(0,2).join("-");if(c===t0)return true}if(tt.length>=2){const c=tt.slice(0,2).join("-");if(c===p0)return true}return false}
+// Конфлікт брендових суфіксів: "ЦЕФАЗОЛІН-ДАРНИЦЯ" vs "ЦЕФАЗОЛІН-БХФЗ" — різні виробники, НЕ матч.
+// Вмикається лише коли ОБИДВА токени мають дефісні частини і суфікси різні (стемінг + ігнорування
+// апострофів: АМІНАЗИН-ЗДОРОВ'Я = АМІНАЗИН-ЗДОРОВ"Я). Асиметрію (Рінгер ↔ Рінгер-Лактатний,
+// Амікацин ↔ АМІКАЦИН-ВІСТА) не зачіпає. Також лагодить СОЛУ-МЕДРОЛ vs СОЛУ-КОРТЕФ.
+function brandSuffixConflict(p0,t0){
+  const pp=p0.split("-"),tp=t0.split("-");
+  if(pp.length<2||tp.length<2)return false;
+  const clean=(w)=>stemUk(w.replace(/['"’ʼ`]/g,""));
+  const s0p=clean(pp[0]),s0t=clean(tp[0]);
+  if(!(pp[0]===tp[0]||(s0p===s0t&&s0p.length>=4)))return false;
+  const n=Math.min(pp.length,tp.length);
+  for(let i=1;i<n;i++){
+    const a=clean(pp[i]),b=clean(tp[i]);
+    if(a!==b&&!a.startsWith(b)&&!b.startsWith(a))return true;
+  }
+  return false;
+}
+function tokMatch(pt,tt){if(!pt.length||!tt.length)return false;const p0=pt[0],t0=tt[0];if(p0===t0)return true;if(brandSuffixConflict(p0,t0))return false;const pp=p0.split("-"),tp=t0.split("-");if((pp.length>1||tp.length>1)&&pp[0]===tp[0]&&pp[0].length>=4)return true;if(p0.length>=6&&t0.startsWith(p0))return true;if(t0.length>=6&&p0.startsWith(t0))return true;const ps=stemUk(p0),ts=stemUk(t0);if(ps===ts&&ps.length>=5)return true;if(ps.length>=5&&ts.startsWith(ps))return true;if(ts.length>=5&&ps.startsWith(ts))return true;if(pp.length>1||tp.length>1){const pps=stemUk(pp[0]),tps=stemUk(tp[0]);if(pps===tps&&pps.length>=4)return true;if(pps.length>=5&&tps.startsWith(pps))return true;if(tps.length>=5&&pps.startsWith(tps))return true}const pn=p0.replace(/И/g,"І"),tn=t0.replace(/И/g,"І");if(pn===tn&&pn.length>=4)return true;if(pn.length>=6&&tn.startsWith(pn))return true;if(tn.length>=6&&pn.startsWith(tn))return true;if(pt.length>=2){const c=pt.slice(0,2).join("-");if(c===t0)return true}if(tt.length>=2){const c=tt.slice(0,2).join("-");if(c===p0)return true}return false}
 function setsOverlap(a,b){for(const x of a)if(b.has(x))return true;return false}
 const CF=new Set(["SOL","INF","PWD"]);function formsOk(pF,tF){if(!pF.size||!tF.size)return true;if(setsOverlap(pF,tF))return true;return[...pF].some(f=>CF.has(f))&&[...tF].some(f=>CF.has(f))}
 function extractPk(n){
@@ -1127,15 +1144,52 @@ const SINGLE_U=new Set(["ампул","капс","капс.","таб","конт",
 const T_SINGLE=new Set(["шпр","шприц","фл","фл.","флак","флакон","флк","амп","ампул","ампула","пляш","пляшка","саше","таб","табл","капс","капе","контейнер","штука","туб","супп","кан."]);
 function cDate(c){if(!c)return[9999,1,1];let m=c.match(/(?:від|Авд)\s+(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);if(m){let y=parseInt(m[3]);if(y<100)y+=2000;return[y,parseInt(m[2]),parseInt(m[1])]}const mo={"січня":1,"лютого":2,"березня":3,"квітня":4,"травня":5,"червня":6,"липня":7,"серпня":8,"вересня":9,"жовтня":10,"листопада":11,"грудня":12};m=c.match(/від\s+[«"]?(\d{1,2})[»"]?\s+(\w+)\s+(\d{4})/);if(m)return[parseInt(m[3]),mo[m[2].toLowerCase()]||1,parseInt(m[1])];m=c.match(/від\s+(\d{1,2}),(\d{1,2})\s+(\d{4})/);if(m)return[parseInt(m[3]),parseInt(m[2]),parseInt(m[1])];return[9999,1,1]}
 
+// ═══ ДОЗОВИЙ ФІЛЬТР (для matchAll) ═══
+// Канонізація доз: % → мг/мл (X% = 10·X мг/мл), Г → МГ, МКГ → МГ,
+// числа з пробілами ("1 000 000 МО") зшиваються перед розбором.
+// Використовується ЛИШЕ у дозовому фільтрі matchAll — getDoses не чіпаємо.
+function getDosesCanon(s){
+  let u=norm(s).replace(/(\d)\s+(?=\d)/g,"$1");
+  // "2млн. МО" → "2000000 МО", "25 тис МО" → "25000 МО"
+  u=u.replace(/(\d+(?:[.,]\d+)?)\s*МЛН\.?\s*(?=МО)/g,(_,v)=>String(parseFloat(v.replace(",","."))*1e6)+" ");
+  u=u.replace(/(\d+(?:[.,]\d+)?)\s*ТИС\.?\s*(?=МО)/g,(_,v)=>String(parseFloat(v.replace(",","."))*1e3)+" ");
+  const d=new Set();
+  for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){
+    const v=parseFloat(m[1].replace(",","."));const unit=m[2];
+    if(unit==="МО"){d.add("МО"+v);continue}
+    let mg=v;
+    if(unit==="%")mg=v*10;
+    else if(unit==="Г")mg=v*1000;
+    else if(unit==="МКГ")mg=v/1000;
+    d.add("МГ"+Math.round(mg*1e6)/1e6);
+  }
+  return d;
+}
+// Якщо дози визначені з ОБОХ боків і не перетинаються — не матч.
+// Виняток для комбінованих препаратів: одна доза = сумі доз іншого боку (1,2г = 1000мг+200мг).
+function dosesOk(pD,tD){
+  if(!pD.size||!tD.size)return true;
+  for(const x of pD)if(tD.has(x))return true;
+  const sumMg=(S)=>{let s=0;for(const x of S){if(!x.startsWith("МГ"))return null;s+=parseFloat(x.slice(2))}return Math.round(s*1e6)/1e6};
+  const ps=sumMg(pD),ts=sumMg(tD);
+  if(pD.size===1&&ts!=null&&[...pD][0]==="МГ"+ts)return true;
+  if(tD.size===1&&ps!=null&&[...tD][0]==="МГ"+ps)return true;
+  return false;
+}
+
 function matchAll(purchases,tenders,ov={}){
 const results=[];
 for(const p of purchases){
 const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
+const pDC=getDosesCanon(p.name);
 const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=stemUk(pt[1]),s2=stemUk(tt[1]);if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1)){const h1=pt[1].split("-")[0],h2=tt[1].split("-")[0];const hs1=stemUk(h1),hs2=stemUk(h2);if(hs1.length>=4&&hs2.length>=4){if(hs1!==hs2&&!hs1.startsWith(hs2)&&!hs2.startsWith(hs1))continue}}}if(!formsOk(pF,getForm(t.commercial)))continue;
 
 // Container check: use improved getContainer (strips accessories) with original comparison
 const pCont=getContainer(p.name),tCont=getContainer(t.commercial);
 if(pCont&&tCont&&pCont!==tCont)continue;
+
+// Dose gate: конфліктні концентрації (Глюкоза 5% ≠ 100 мг/мл) — не матч
+if(!dosesOk(pDC,getDosesCanon(t.commercial)))continue;
 
 bm.push(i)}
 let matched=bm;
