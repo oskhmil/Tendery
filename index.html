@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 67;
+const APP_VERSION = 68;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1195,6 +1195,14 @@ bm.push(i)}
 let matched=bm;
 const pPk=extractPkStrict(p.name);
 if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStrict(tenders[i].commercial);return tPk===0||tPk===pPk});if(pkf.length>0)matched=pkf}
+// Перевага точного бренд-токена: якщо серед кандидатів є тендер з ТОЧНО тим самим першим
+// токеном (за стемом), асиметричні дефісні відкидаємо (Рінгера ≠ РІНГЕР-ЛАКТАТНИЙ, коли існує
+// чистий РОЗЧИН РІНГЕРА). Якщо точних нема — поведінка не змінюється.
+if(matched.length>1&&pt.length){
+  const pstem=stemUk(pt[0]);
+  const exact=matched.filter(i=>{const tb=getBrand(tenders[i].commercial);return tb.length&&stemUk(tb[0])===pstem});
+  if(exact.length&&exact.length<matched.length)matched=exact;
+}
 if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
 if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
@@ -2006,6 +2014,9 @@ if(cands.length===0)return null;
 if(cands.length===1)return cands[0];
 // Prefer candidate with matching first two tokens
 for(const c of cands){const cb=getBrand(c.n);if(cb.length>=2&&nB.length>=2&&cb[0]===nB[0]&&cb[1]===nB[1])return c}
+// Перевага точного першого токена за стемом (Рінгер-лактатний з Форми6 → рядок
+// Рінгер-лактатного, а не звичайного Рінгера)
+for(const c of cands){const cb=getBrand(c.n);if(cb.length&&stemUk(cb[0])===stemUk(nB[0]))return c}
 return cands[0];
 }
 function monitorKey(s){return s.toUpperCase().replace(/[®.,;:"'`\u2019]/g," ").replace(/\s+/g," ").trim()}
@@ -2369,6 +2380,26 @@ if(!monitor.multi)s.tenderRemaining=monitor.rem;
 const suppliers=Object.values(bySup);
 lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,deficit:it.deficit,dailyRate:it.dailyRate,monitor,suppliers});
 }
+// ── Об'єднання рядків, що вказують на ту саму тендерну позицію ──
+// Одна й та сама позиція буває записана у Формі6 різними назвами (різні відділення/склади:
+// "конц. для р-ну/інф." vs "р-н д/ін."). Ключ — повний набір тендерних позицій (пост+угода+назва).
+// Головним лишається рядок з більшим дефіцитом; його назва — ключ для ручних дій (сховати/кількість).
+if(lines.length>1){
+  const posKey=l=>l.monitor.t.map(t=>t.s+"|"+t.c+"|"+norm(t.cn).slice(0,60)).sort().join("~");
+  const seen={};const merged=[];
+  for(const l of lines){
+    const k=posKey(l);
+    const m=seen[k];
+    if(!m){seen[k]=l;merged.push(l);continue}
+    const main=m.deficit>=l.deficit?m:l,sec=main===m?l:m;
+    main.deficit+=sec.deficit;main.need+=sec.need;main.f6Stock+=sec.f6Stock;
+    main.dailyRate=(main.dailyRate||0)+(sec.dailyRate||0);
+    (main.mergedFrom=main.mergedFrom||[]).push(sec.drugName);
+    if(sec.mergedFrom)main.mergedFrom.push(...sec.mergedFrom);
+    if(main!==m){merged[merged.indexOf(m)]=main;seen[k]=main}
+  }
+  lines.length=0;lines.push(...merged);
+}
 // Apply supplier choice: for each line pick chosen supplier (or first)
 const bySupplierGroup={};
 for(const l of lines){
@@ -2405,6 +2436,7 @@ pricePerPack:sup.pricePerPack,costEstimate,
 altSuppliers:l.suppliers.filter(s=>s.name!==sup.name).map(s=>s.name),
 allSuppliers:l.suppliers.map(s=>s.name),
 ven,abc,emlCandidate,overridden,autoPacks,
+mergedFrom:l.mergedFrom||null,
 });
 if(costEstimate!=null)bySupplierGroup[sup.name].total+=costEstimate;
 }
@@ -2674,6 +2706,7 @@ for(const cName of contractNames){
     h+='</div>';
     if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
     if(it.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">МНН: ${esc(it.mnn).slice(0,80)}</div>`;
+    if(it.mergedFrom&&it.mergedFrom.length)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з: ${esc(it.mergedFrom.join("; ")).slice(0,160)}</div>`;
     h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
     h+=`<div class="row"><span>Потреба (на ${ordersHorizon}д):</span><strong>${fmt(Math.round(it.need))} ${esc(it.f6Unit)}</strong></div>`;
     h+=`<div class="row"><span>Дефіцит:</span><strong style="color:var(--danger)">${fmt(Math.round(it.deficit))} ${esc(it.f6Unit)}</strong></div>`;
