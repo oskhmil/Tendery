@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 68;
+const APP_VERSION = 69;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2265,10 +2265,27 @@ async function syncForcePull(){
 function syncMenu(){
   const labels={idle:"очікує",uploading:"вивантаження...",downloading:"завантаження...",ok:"синхронізовано",err:"помилка"};
   const st=labels[_syncStatus]||_syncStatus;
-  const ans=prompt("Синхронізація: "+st+"\n\n1 — Вивантажити зараз (ПК/телефон → хмара)\n2 — Завантажити з хмари (хмара → цей пристрій)\n3 — Вимкнути/увімкнути синхронізацію (зараз: "+(_syncEnabled?"увімкнено":"вимкнено")+")\n\nВведи цифру:");
+  const ans=prompt("Синхронізація: "+st+"\n\n1 — Вивантажити зараз (ПК/телефон → хмара)\n2 — Завантажити з хмари (хмара → цей пристрій)\n3 — Вимкнути/увімкнути синхронізацію (зараз: "+(_syncEnabled?"увімкнено":"вимкнено")+")\n4 — Полікувати синхронізацію (скинути мітки цього пристрою і злити з хмарою)\n\nВведи цифру:");
   if(ans==="1")syncForcePush();
   else if(ans==="2")syncForcePull();
   else if(ans==="3"){_syncEnabled=!_syncEnabled;updateSyncIndicator();alert("Синхронізація "+(_syncEnabled?"увімкнена":"вимкнена"))}
+  else if(ans==="4")syncRepair();
+}
+// Лікування синхронізації: скидає локальні мітки часу/видалення (тумбстоуни) ЦЬОГО пристрою
+// і заново зливає стан з хмарою. Потрібно, коли Android почистив частину localStorage і
+// пристрій вважає позиції "видаленими", блокуючи їх відновлення з хмари.
+// Чіпає лише ключі TenderTrack — інші проєкти на домені не зачіпає.
+async function syncRepair(){
+  const ok=confirm("Скинути мітки синхронізації цього пристрою і злити стан з хмарою заново?\n\nПозиції, які є в хмарі, повернуться на цей пристрій. Локальні дані інших застосунків не зачіпаються.");
+  if(!ok)return;
+  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}};
+  _syncSnap={};
+  for(const cat of Object.keys(_SYNC_GET))_syncSnap[cat]=_syncClone(_SYNC_GET[cat]());
+  _manualTs=0;
+  saveSyncMeta();
+  const r=await syncPull(false);
+  if(r){render();alert("Готово: мітки скинуто, стан злито з хмарою")}
+  else alert("Мітки скинуто, але не вдалось завантажити з хмари ("+_syncStatus+"). Спробуй ☁ → 2 пізніше.");
 }
 // Automatic VEN: WHO EML → V by default; user override takes precedence
 function getVen(drugName,mnn){
