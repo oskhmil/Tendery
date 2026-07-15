@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 71;
+const APP_VERSION = 72;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -319,6 +319,7 @@ let f6MonthsEnabled=null;  // null=all enabled; array of booleans otherwise
 // Замовлення state
 let ordersHorizon=30;                  // days to cover
 let ordersSupplierChoice={};           // {drugName: "supplierName"}
+let ordersAllocOverride={};            // {purchaseName: {supplier: qty}} — розподіл приходу, заданий у застосунку
 let ordersExcluded={};                 // {drugName: true} — exclude from orders entirely (removed from calculation)
 let ordersHidden={};                   // {drugName|supplier: true} — hide from output text/csv but keep visible in UI
 let ordersSearch="";
@@ -814,17 +815,18 @@ let ordersQtyOverride={};          // {drugName: packsToOrder} — user-edited q
 
 // Manual additional order lines: {drugName, supplier, contract, packUnit, pk, packsToOrder, pricePerPack, note}
 let ordersManual=[];
+let _manualMigrated=false;
 
 // Track which order lines are "pending" — already placed with supplier, waiting for delivery
 // Key: drugName + "|" + supplierName. Value: {ts: ISO date string, note: optional}
 let ordersPending={};
 
 // ── Sync metadata: per-item timestamps + tombstones for merge-based cloud sync ──
-let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}};
-let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}};
+let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}};
+let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}};
 let _manualTs=0;
-const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice};
-const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice"};
+const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice,allocov:()=>ordersAllocOverride};
+const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice",allocov:"_allocov"};
 
 
 // Manual-add dialog state
@@ -1177,6 +1179,9 @@ function dosesOk(pD,tD){
   return false;
 }
 
+// Ефективний розподіл: лист "Розподіл" з Excel + правки в застосунку (застосунок має пріоритет по препарату)
+function _effOverrides(){return Object.assign({},overrides,ordersAllocOverride)}
+function rebuildMatches(){if(!parsedPurchases||!parsedPurchases.length)return;allData=matchAll(parsedPurchases,allTenders,_effOverrides());render()}
 function matchAll(purchases,tenders,ov={}){
 const results=[];
 for(const p of purchases){
@@ -1345,7 +1350,7 @@ const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Erro
 purchasesRaw=pB;tendersRaw=tB;
 const p=parsePurchases(pB);const t=parseTenders(tB);
 overrides=parseAllocations(tB);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides());lastUpdated=new Date();
 saveCache();
 // Only jump to main screen if user isn't currently on home
 const onHome=!document.getElementById("home-screen").classList.contains("hidden");
@@ -1364,7 +1369,7 @@ showLoader("Обробка файлів...");
 setTimeout(()=>{
 const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
 overrides=parseAllocations(tendersRaw);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,overrides);lastUpdated=new Date();
+parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides());lastUpdated=new Date();
 saveCache();showMain();
 },50);
 }
@@ -2114,6 +2119,7 @@ function loadVen(){
   const ex=loadKey("_excluded");if(ex)ordersExcluded=ex||{};
   const hd=loadKey("_hidden");if(hd)ordersHidden=hd||{};
   const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
+  const ao=loadKey("_allocov");if(ao)ordersAllocOverride=ao||{};
   loadSyncMeta();
 }
 function saveManual(){_manualTs=Date.now();try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}saveSyncMeta();syncPushSoon()}
@@ -2121,17 +2127,18 @@ function savePending(){stampCat("pending");try{localStorage.setItem(USER_KEY+"_p
 function saveQtyOverride(){stampCat("qty");try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
 function saveExcluded(){stampCat("excluded");try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
 function saveHidden(){stampCat("hidden");try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}syncPushSoon()}
+function saveAllocOverride(){stampCat("allocov");try{localStorage.setItem(USER_KEY+"_allocov",JSON.stringify(ordersAllocOverride))}catch(e){}syncPushSoon()}
 function saveSupplierChoice(){stampCat("supChoice");try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
 
 // ═══════ CLOUD SYNC ═══════
 // ── Merge-based sync helpers (LWW per item + tombstones) ──
 function _syncClone(o){try{return JSON.parse(JSON.stringify(o||{}))}catch(e){return{}}}
-function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;}
+function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;else if(cat==="allocov")ordersAllocOverride=m;}
 function _syncPersistCat(cat){try{localStorage.setItem(USER_KEY+_SYNC_SUFFIX[cat],JSON.stringify(_SYNC_GET[cat]()))}catch(e){}}
 function saveSyncMeta(){try{localStorage.setItem(USER_KEY+"_meta",JSON.stringify({meta:_syncMeta,snap:_syncSnap,manualTs:_manualTs}))}catch(e){}}
 function loadSyncMeta(){
   let loaded=false;
-  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
+  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
   // Baseline snapshot = current loaded maps, so the first local diff is computed correctly.
   // When no stored meta (first run / migration), reset every snapshot to the loaded map.
   for(const cat of Object.keys(_SYNC_GET)){
@@ -2173,6 +2180,7 @@ function collectUserState(){
     excluded: ordersExcluded||{},
     hidden: ordersHidden||{},
     supChoice: ordersSupplierChoice||{},
+    allocov: ordersAllocOverride||{},
     _meta: Object.assign({},_syncMeta,{manualTs:_manualTs}),
     _localTs: Date.now()
   };
@@ -2278,7 +2286,7 @@ function syncMenu(){
 async function syncRepair(){
   const ok=confirm("Скинути мітки синхронізації цього пристрою і злити стан з хмарою заново?\n\nПозиції, які є в хмарі, повернуться на цей пристрій. Локальні дані інших застосунків не зачіпаються.");
   if(!ok)return;
-  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{}};
+  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}};
   _syncSnap={};
   for(const cat of Object.keys(_SYNC_GET))_syncSnap[cat]=_syncClone(_SYNC_GET[cat]());
   _manualTs=0;
@@ -2461,6 +2469,13 @@ if(costEstimate!=null)bySupplierGroup[sup.name].total+=costEstimate;
 // Append manually-added items
 for(const m of ordersManual){
 if(!m||!m.supplier||!m.drugName)continue;
+// Відстеження приходу: порівнюємо закуплене по тендерній позиції зі знімком на момент додавання
+let arrivedQty=0,arrivedUnit="";
+if(allData.length){
+  const cur=_tenderPurchasedQty(m.supplier,m.contract||"",m.commercial||m.drugName);
+  if(m.baseQty==null){m.baseQty=cur.q;m.baseUnit=cur.u;_manualMigrated=true;} // міграція старих позицій
+  else if(cur.q>m.baseQty){arrivedQty=cur.q-m.baseQty;arrivedUnit=cur.u||m.baseUnit||"";}
+}
 const packs=Math.max(0,parseInt(m.packsToOrder)||0);
 const pk=m.pk||1;
 const price=m.pricePerPack;
@@ -2482,10 +2497,11 @@ qtyInPurchaseUnits:packs*pk,
 pricePerPack:price,costEstimate:cost,
 altSuppliers:[],allSuppliers:[m.supplier],
 ven,abc,emlCandidate:false,overridden:false,autoPacks:packs,
-manual:true,manualId:m.id,
+manual:true,manualId:m.id,arrivedQty,arrivedUnit,
 });
 if(cost!=null)bySupplierGroup[m.supplier].total+=cost;
 }
+if(_manualMigrated){_manualMigrated=false;saveManual();} // одноразове збереження знімків
 
 const supplierOrders=Object.values(bySupplierGroup).sort((a,b)=>a.name.localeCompare(b.name,"uk"));
 return{lines,noMatch,noTender,supplierOrders,needPurchases:allData.length===0};
@@ -2723,6 +2739,7 @@ for(const cName of contractNames){
     h+='</div>';
     if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
     if(it.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">МНН: ${esc(it.mnn).slice(0,80)}</div>`;
+    if(it.manual&&it.arrivedQty>0)h+=`<div style="font-size:11px;color:var(--accent);background:rgba(34,197,94,.12);border-radius:6px;padding:4px 8px;margin-bottom:4px">🚚 Надійшло: <strong>+${fmt(it.arrivedQty)} ${esc(it.arrivedUnit||"од")}</strong> з моменту додавання — перевір, можливо позицію можна прибрати</div>`;
     if(it.mergedFrom&&it.mergedFrom.length)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з: ${esc(it.mergedFrom.join("; ")).slice(0,160)}</div>`;
     h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
     h+=`<div class="row"><span>Потреба (на ${ordersHorizon}д):</span><strong>${fmt(Math.round(it.need))} ${esc(it.f6Unit)}</strong></div>`;
@@ -3183,6 +3200,7 @@ function confirmAdd(){
   const t=ordersAddPicked;
   const packs=Math.max(1,ordersAddPacks|0);
   const id="m_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  const base=_tenderPurchasedQty(t.supplier,t.contract||"",t.commercial);
   ordersManual.push({
     id,
     drugName:t.commercial,
@@ -3194,9 +3212,23 @@ function confirmAdd(){
     pk:1,
     packsToOrder:packs,
     pricePerPack:t.price!=null?t.price:null,
+    baseQty:base.q,baseUnit:base.u,
   });
   saveManual();
   closeAddDialog();
+}
+// Скільки вже закуплено по конкретній тендерній позиції (для відстеження приходу
+// ручних позицій). Порівнюємо по позиції, а не по назві закупки — тому прихід
+// буде помічено незалежно від того, яким написанням його оформить 1С.
+function _tenderPurchasedQty(sup,contract,cn){
+  let q=0,u="";
+  if(!allData||!allData.length)return{q:0,u:""};
+  const key=norm(cn).slice(0,60);
+  for(const r of allData){
+    if(!r.t||!r.t.length||!r.pq)continue;
+    if(r.t.some(t=>t.s===sup&&(t.c||"")===(contract||"")&&norm(t.cn).slice(0,60)===key)){q+=r.pq;if(!u)u=r.u||""}
+  }
+  return{q,u};
 }
 function removeManual(id){
   if(event)event.stopPropagation();
@@ -3862,18 +3894,60 @@ function sendOrderWhatsApp(gi){
 
 function renderConflicts(el){
 const conflicts=allData.filter(d=>d.multi&&!d.alloc);
-if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл внесено у лист "Розподіл" файлу тендерів</div></div>';return}
-let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Внесіть розподіл у лист <strong>"Розподіл"</strong> файлу тендерів на Google Drive, потім натисніть "Оновити".</div>';
-conflicts.forEach(d=>{
+// Позиції, розподілені в застосунку (можна скинути і перерозподілити)
+const appAllocated=Object.keys(ordersAllocOverride).filter(n=>allData.some(d=>d.n===n));
+let doneH="";
+if(appAllocated.length){
+  window._allocDoneList=appAllocated;
+  doneH='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">📌 Розподілено в застосунку:</div>';
+  appAllocated.forEach((n,i)=>{
+    const a=ordersAllocOverride[n];
+    const parts=Object.entries(a).map(([s,q])=>`${esc(s)}: ${fmt(q)}`).join(" · ");
+    doneH+=`<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,.04);border-radius:8px;margin-bottom:4px"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</div><div style="font-size:10px;color:var(--muted)">${parts}</div></div><button class="sort-btn" style="font-size:10px;color:var(--danger);flex-shrink:0" onclick="resetAllocUI(${i})">✕ Скинути</button></div>`;
+  });
+  doneH+='</div>';
+}
+if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
+let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Вкажи нижче, скільки закупленого повісити на кожного, і натисни <strong>Застосувати</strong> (або внеси в лист "Розподіл" файлу тендерів на Drive).</div>';
+window._conflictCards=conflicts;
+conflicts.forEach((d,ci)=>{
 h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
-d.multi.forEach(sup=>{
+const cur=ordersAllocOverride[d.n]||{};
+d.multi.forEach((sup,si)=>{
 const supItems=d.allM.filter(t=>t.s===sup);
 const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
-h+=`<div class="conflict-opt"><div style="flex:1"><div class="name">${esc(sup)}</div><div class="info">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,80)}</div><div class="info">В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div></div>`;
+const val=cur[sup]!=null?cur[sup]:"";
+h+=`<div class="alloc-row"><div style="flex:1;min-width:0"><div class="sup-name">${esc(sup)}</div><div class="alloc-cap">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,70)} · В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input type="number" min="0" class="alloc-input" id="alloc-in-${ci}-${si}" value="${val}" placeholder="0"></div>`;
 });
+h+=`<button class="alloc-apply" onclick="applyAllocUI(${ci})">✓ Застосувати</button>`;
 h+=`</div>`;
 });
-el.innerHTML=h;
+el.innerHTML=h+doneH;
+}
+// Скидання розподілу, заданого в застосунку (позиція повернеться в конфлікти для перерозподілу)
+function resetAllocUI(i){
+  const n=(window._allocDoneList||[])[i];if(!n)return;
+  if(!confirm("Скинути розподіл для:\n"+n+"?"))return;
+  delete ordersAllocOverride[n];
+  saveAllocOverride();
+  rebuildMatches();
+}
+// Зчитує поля розподілу картки конфлікту, зберігає і перебудовує матчинг
+function applyAllocUI(ci){
+  const d=(window._conflictCards||[])[ci];if(!d)return;
+  const alloc={};let sum=0;
+  d.multi.forEach((sup,si)=>{
+    const inp=document.getElementById("alloc-in-"+ci+"-"+si);
+    const v=inp?Math.max(0,parseInt(inp.value)||0):0;
+    if(v>0){alloc[sup]=v;sum+=v;}
+  });
+  if(!sum){delete ordersAllocOverride[d.n];}
+  else{
+    if(sum<d.pq&&!confirm(`Розподілено ${fmt(sum)} з ${fmt(d.pq)} ${d.u}. Залишок (${fmt(d.pq-sum)}) перейде постачальнику з вільною ємністю, коли хтось із вказаних вичерпає угоду. Продовжити?`))return;
+    ordersAllocOverride[d.n]=alloc;
+  }
+  saveAllocOverride();
+  rebuildMatches();
 }
 
 // ═══════ АВТОПЕРЕВІРКА НОВОЇ ВЕРСІЇ ═══════
