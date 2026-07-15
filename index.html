@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 72;
+const APP_VERSION = 74;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -320,6 +320,10 @@ let f6MonthsEnabled=null;  // null=all enabled; array of booleans otherwise
 let ordersHorizon=30;                  // days to cover
 let ordersSupplierChoice={};           // {drugName: "supplierName"}
 let ordersAllocOverride={};            // {purchaseName: {supplier: qty}} — розподіл приходу, заданий у застосунку
+let ordersManualLink={};               // {purchaseName: {s,c,cn}} — ручна прив'язка закупки до тендерної позиції
+let linkDialogFor=null;                // назва закупки, для якої відкрито діалог прив'язки
+let linkQuery="";
+let allocDialogFor=null;              // назва закупки, для якої відкрито діалог розподілу
 let ordersExcluded={};                 // {drugName: true} — exclude from orders entirely (removed from calculation)
 let ordersHidden={};                   // {drugName|supplier: true} — hide from output text/csv but keep visible in UI
 let ordersSearch="";
@@ -822,11 +826,11 @@ let _manualMigrated=false;
 let ordersPending={};
 
 // ── Sync metadata: per-item timestamps + tombstones for merge-based cloud sync ──
-let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}};
-let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}};
+let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}};
+let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}};
 let _manualTs=0;
-const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice,allocov:()=>ordersAllocOverride};
-const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice",allocov:"_allocov"};
+const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice,allocov:()=>ordersAllocOverride,mlink:()=>ordersManualLink};
+const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice",allocov:"_allocov",mlink:"_mlink"};
 
 
 // Manual-add dialog state
@@ -1181,8 +1185,8 @@ function dosesOk(pD,tD){
 
 // Ефективний розподіл: лист "Розподіл" з Excel + правки в застосунку (застосунок має пріоритет по препарату)
 function _effOverrides(){return Object.assign({},overrides,ordersAllocOverride)}
-function rebuildMatches(){if(!parsedPurchases||!parsedPurchases.length)return;allData=matchAll(parsedPurchases,allTenders,_effOverrides());render()}
-function matchAll(purchases,tenders,ov={}){
+function rebuildMatches(){if(!parsedPurchases||!parsedPurchases.length)return;allData=matchAll(parsedPurchases,allTenders,_effOverrides(),ordersManualLink);render()}
+function matchAll(purchases,tenders,ov={},links={}){
 const results=[];
 for(const p of purchases){
 const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
@@ -1197,8 +1201,13 @@ if(pCont&&tCont&&pCont!==tCont)continue;
 if(!dosesOk(pDC,getDosesCanon(t.commercial)))continue;
 
 bm.push(i)}
-let matched=bm;
+// Ручна прив'язка: користувач сам вказав тендерну позицію для цієї закупки — вона перемагає автоматику
+let _forced=null;
+const _lk=links[p.name];
+if(_lk){const fi=[];for(let i=0;i<tenders.length;i++){const t2=tenders[i];if(t2.supplier===_lk.s&&(t2.contract||"")===(_lk.c||"")&&norm(t2.commercial).slice(0,80)===_lk.cn)fi.push(i)}if(fi.length)_forced=fi;}
+let matched=_forced||bm;
 const pPk=extractPkStrict(p.name);
+if(!_forced){ // уточнюючі фільтри лише для автоматичних кандидатів — ручна прив'язка недоторканна
 if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStrict(tenders[i].commercial);return tPk===0||tPk===pPk});if(pkf.length>0)matched=pkf}
 // Перевага точного бренд-токена: якщо серед кандидатів є тендер з ТОЧНО тим самим першим
 // токеном (за стемом), асиметричні дефісні відкидаємо (Рінгера ≠ РІНГЕР-ЛАКТАТНИЙ, коли існує
@@ -1210,6 +1219,7 @@ if(matched.length>1&&pt.length){
 }
 if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
 if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
+}
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
 let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
 const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
@@ -1350,7 +1360,7 @@ const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Erro
 purchasesRaw=pB;tendersRaw=tB;
 const p=parsePurchases(pB);const t=parseTenders(tB);
 overrides=parseAllocations(tB);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides());lastUpdated=new Date();
+parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides(),ordersManualLink);lastUpdated=new Date();
 saveCache();
 // Only jump to main screen if user isn't currently on home
 const onHome=!document.getElementById("home-screen").classList.contains("hidden");
@@ -1369,7 +1379,7 @@ showLoader("Обробка файлів...");
 setTimeout(()=>{
 const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
 overrides=parseAllocations(tendersRaw);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides());lastUpdated=new Date();
+parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides(),ordersManualLink);lastUpdated=new Date();
 saveCache();showMain();
 },50);
 }
@@ -1644,6 +1654,23 @@ if(venPopupFor){
   const overlay=document.getElementById("ven-popup-overlay");
   if(overlay)overlay.innerHTML="";
 }
+// Global Alloc dialog (monitor view — розподіл між постачальниками)
+if(allocDialogFor){
+  const overlay=document.getElementById("alloc-dialog-overlay")||(()=>{const d=document.createElement("div");d.id="alloc-dialog-overlay";document.body.appendChild(d);return d})();
+  overlay.innerHTML=buildAllocDialog();
+}else{
+  const overlay=document.getElementById("alloc-dialog-overlay");
+  if(overlay)overlay.innerHTML="";
+}
+// Global Link dialog (monitor view — прив'язка закупки до угоди)
+if(linkDialogFor){
+  const overlay=document.getElementById("link-dialog-overlay")||(()=>{const d=document.createElement("div");d.id="link-dialog-overlay";document.body.appendChild(d);return d})();
+  overlay.innerHTML=buildLinkDialog();
+  setTimeout(()=>{const inp=document.getElementById("link-search-input");if(inp&&document.activeElement!==inp)inp.focus();},0);
+}else{
+  const overlay=document.getElementById("link-dialog-overlay");
+  if(overlay)overlay.innerHTML="";
+}
 // Global Add-Manual dialog (orders view only)
 if(ordersAddDialog){
   const overlay=document.getElementById("add-dialog-overlay")||(()=>{const d=document.createElement("div");d.id="add-dialog-overlay";document.body.appendChild(d);return d})();
@@ -1744,7 +1771,7 @@ h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val
 h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
 if(d.multi&&!d.alloc){
-h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено — внесіть у лист "Розподіл" файлу тендерів</div></div>`}
+h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено між постачальниками</div><button class="alloc-apply" style="width:100%" onclick="event.stopPropagation();openAllocDialog(${idx})">✎ Розподілити</button></div>`}
 if(d.multi&&d.alloc){
 h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
 d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
@@ -1752,8 +1779,9 @@ if(d.allocMissing>0){
 h+=`<div class="alloc-row" style="border-top:1px dashed rgba(245,158,11,.4);margin-top:4px;padding-top:4px"><span class="sup-name" style="color:#fbbf24">⚠ Не розподілено</span><span style="color:#fbbf24;font-weight:600">${fmt(d.allocMissing)} ${esc(d.u)}</span></div>`;
 h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">Реально закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, а у Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong>. Онови лист «Розподіл» у файлі тендерів.</div>`;
 }else if(d.allocExcess>0){
-h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.12);border-left:3px solid #ef4444;border-radius:6px;font-size:11px;color:#fca5a5">⚠ У Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong> ${esc(d.u)}, але реально закуплено лише <strong>${fmt(d.realQty)}</strong>. Перевір лист «Розподіл».</div>`;
+h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.12);border-left:3px solid #ef4444;border-radius:6px;font-size:11px;color:#fca5a5">⚠ У Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong> ${esc(d.u)}, але реально закуплено лише <strong>${fmt(d.realQty)}</strong>.</div>`;
 }
+h+=`<button class="alloc-apply" style="width:100%;margin-top:6px" onclick="event.stopPropagation();openAllocDialog(${idx})">✎ Змінити розподіл</button>`;
 h+=`</div>`}
 h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
 d.t.forEach(t=>{
@@ -1774,7 +1802,8 @@ d.t.forEach(t=>{
   if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;
   h+=`</div>`
 });
-if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div>`;
+if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div><button class="sort-btn" style="width:100%;padding:8px;font-size:12px;color:var(--accent);border-color:rgba(34,197,94,.4)" onclick="event.stopPropagation();openLinkDialog(${idx})">🔗 Прив'язати до угоди</button>`;
+if(ht&&ordersManualLink[d.n])h+=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="font-size:11px;color:var(--accent)">🔗 Прив'язано вручну</span><button class="sort-btn" style="font-size:10px;color:var(--danger)" onclick="event.stopPropagation();unlinkManual(${idx})">✕ Відв'язати</button></div>`;
 h+=`</div></div>`;
 });}
 }else{
@@ -2120,6 +2149,7 @@ function loadVen(){
   const hd=loadKey("_hidden");if(hd)ordersHidden=hd||{};
   const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
   const ao=loadKey("_allocov");if(ao)ordersAllocOverride=ao||{};
+  const ml=loadKey("_mlink");if(ml)ordersManualLink=ml||{};
   loadSyncMeta();
 }
 function saveManual(){_manualTs=Date.now();try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}saveSyncMeta();syncPushSoon()}
@@ -2127,18 +2157,19 @@ function savePending(){stampCat("pending");try{localStorage.setItem(USER_KEY+"_p
 function saveQtyOverride(){stampCat("qty");try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
 function saveExcluded(){stampCat("excluded");try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
 function saveHidden(){stampCat("hidden");try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}syncPushSoon()}
+function saveManualLink(){stampCat("mlink");try{localStorage.setItem(USER_KEY+"_mlink",JSON.stringify(ordersManualLink))}catch(e){}syncPushSoon()}
 function saveAllocOverride(){stampCat("allocov");try{localStorage.setItem(USER_KEY+"_allocov",JSON.stringify(ordersAllocOverride))}catch(e){}syncPushSoon()}
 function saveSupplierChoice(){stampCat("supChoice");try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
 
 // ═══════ CLOUD SYNC ═══════
 // ── Merge-based sync helpers (LWW per item + tombstones) ──
 function _syncClone(o){try{return JSON.parse(JSON.stringify(o||{}))}catch(e){return{}}}
-function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;else if(cat==="allocov")ordersAllocOverride=m;}
+function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;else if(cat==="allocov")ordersAllocOverride=m;else if(cat==="mlink")ordersManualLink=m;}
 function _syncPersistCat(cat){try{localStorage.setItem(USER_KEY+_SYNC_SUFFIX[cat],JSON.stringify(_SYNC_GET[cat]()))}catch(e){}}
 function saveSyncMeta(){try{localStorage.setItem(USER_KEY+"_meta",JSON.stringify({meta:_syncMeta,snap:_syncSnap,manualTs:_manualTs}))}catch(e){}}
 function loadSyncMeta(){
   let loaded=false;
-  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
+  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
   // Baseline snapshot = current loaded maps, so the first local diff is computed correctly.
   // When no stored meta (first run / migration), reset every snapshot to the loaded map.
   for(const cat of Object.keys(_SYNC_GET)){
@@ -2181,6 +2212,7 @@ function collectUserState(){
     hidden: ordersHidden||{},
     supChoice: ordersSupplierChoice||{},
     allocov: ordersAllocOverride||{},
+    mlink: ordersManualLink||{},
     _meta: Object.assign({},_syncMeta,{manualTs:_manualTs}),
     _localTs: Date.now()
   };
@@ -2286,7 +2318,7 @@ function syncMenu(){
 async function syncRepair(){
   const ok=confirm("Скинути мітки синхронізації цього пристрою і злити стан з хмарою заново?\n\nПозиції, які є в хмарі, повернуться на цей пристрій. Локальні дані інших застосунків не зачіпаються.");
   if(!ok)return;
-  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{}};
+  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}};
   _syncSnap={};
   for(const cat of Object.keys(_SYNC_GET))_syncSnap[cat]=_syncClone(_SYNC_GET[cat]());
   _manualTs=0;
@@ -3443,6 +3475,120 @@ function _renderAddResults(){
     h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">К-сть по угоді: ${fmt(t.qty)} ${esc(t.unit||"")}${t.price!=null?` · Ціна: ${fmt(t.price)} грн`:""}</div>`;
     h+='</div>';
   }
+  return h;
+}
+// ═══ ДІАЛОГ РОЗПОДІЛУ З КАРТКИ МОНІТОРИНГУ ═══
+// Працює для будь-якої мульти-позиції: і нерозподіленої, і вже розподіленої (Excel чи застосунок).
+// Збережене тут перекриває лист "Розподіл" по цьому препарату.
+function openAllocDialog(idx){
+  const n=(window._monCards||[])[idx];if(!n)return;
+  allocDialogFor=n;render();
+}
+function closeAllocDialog(){allocDialogFor=null;render()}
+function buildAllocDialog(){
+  const d=allData.find(r=>r.n===allocDialogFor&&r.multi);
+  if(!d)return "";
+  const total=d.realQty!=null?d.realQty:d.pq;
+  const cur=ordersAllocOverride[d.n]||d.alloc||{};
+  window._allocDlgRow=d;
+  let h="";
+  h+='<div onclick="closeAllocDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:110;display:flex;align-items:center;justify-content:center;padding:8px">';
+  h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+  h+='<div style="font-size:15px;font-weight:700;margin-bottom:4px">✎ Розподіл між постачальниками</div>';
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.n)}</div>`;
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Закуплено всього: <strong style="color:var(--text)">${fmt(total)} ${esc(d.u)}</strong></div>`;
+  d.multi.forEach((sup,si)=>{
+    const supItems=d.allM.filter(t=>t.s===sup);
+    const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
+    const val=cur[sup]!=null&&cur[sup]>0?cur[sup]:"";
+    h+=`<div class="alloc-row"><div style="flex:1;min-width:0"><div class="sup-name">${esc(sup)}</div><div class="alloc-cap">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,70)} · В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input type="number" min="0" class="alloc-input" id="alloc-dlg-in-${si}" value="${val}"placeholder="0"></div>`;
+  });
+  h+='<div style="display:flex;gap:8px;margin-top:10px">';
+  h+='<button class="alloc-apply" style="flex:1;margin-top:0" onclick="applyAllocDialog()">✓ Застосувати</button>';
+  h+='<button class="sort-btn" style="padding:8px 14px;font-size:12px" onclick="closeAllocDialog()">Скасувати</button>';
+  h+='</div>';
+  if(ordersAllocOverride[d.n])h+='<button class="sort-btn" style="width:100%;padding:7px;font-size:11px;color:var(--danger);margin-top:8px" onclick="resetAllocDialog()">✕ Скинути розподіл застосунку (повернутись до листа Excel)</button>';
+  h+='</div></div>';
+  return h;
+}
+function applyAllocDialog(){
+  const d=window._allocDlgRow;if(!d)return;
+  const total=d.realQty!=null?d.realQty:d.pq;
+  const alloc={};let sum=0;
+  d.multi.forEach((sup,si)=>{
+    const inp=document.getElementById("alloc-dlg-in-"+si);
+    const v=inp?Math.max(0,parseInt(inp.value)||0):0;
+    if(v>0){alloc[sup]=v;sum+=v;}
+  });
+  if(!sum){alert("Вкажи кількість хоча б одному постачальнику (або Скасувати).");return}
+  if(sum<total&&!confirm(`Розподілено ${fmt(sum)} з ${fmt(total)} ${d.u}. Залишок (${fmt(total-sum)}) перейде постачальнику з вільною ємністю, коли хтось із вказаних вичерпає угоду. Продовжити?`))return;
+  ordersAllocOverride[d.n]=alloc;
+  saveAllocOverride();
+  allocDialogFor=null;
+  rebuildMatches();
+}
+function resetAllocDialog(){
+  const d=window._allocDlgRow;if(!d)return;
+  if(!confirm("Скинути розподіл, заданий у застосунку?\nПовернеться розподіл з листа Excel (якщо є) або позиція піде в конфлікти."))return;
+  delete ordersAllocOverride[d.n];
+  saveAllocOverride();
+  allocDialogFor=null;
+  rebuildMatches();
+}
+// ═══ ДІАЛОГ РУЧНОЇ ПРИВ'ЯЗКИ ЗАКУПКИ ДО УГОДИ ═══
+function openLinkDialog(idx){
+  const n=(window._monCards||[])[idx];if(!n)return;
+  linkDialogFor=n;
+  // Підказка пошуку — перший бренд-токен назви закупки
+  const b=getBrand(n);
+  linkQuery=b.length?b[0].split("-")[0]:"";
+  render();
+}
+function closeLinkDialog(){linkDialogFor=null;render()}
+function onLinkSearchInput(v){linkQuery=v;const list=document.getElementById("link-results-list");if(list)list.innerHTML=_renderLinkResults()}
+function _renderLinkResults(){
+  const w=(linkQuery||"").toLowerCase().split(/\s+/).filter(Boolean);
+  let cands=allTenders;
+  if(w.length)cands=cands.filter(t=>multiMatch((t.commercial||"")+" "+(t.supplier||"")+" "+(t.mnn||""),w));
+  cands=cands.slice(0,60);
+  window._linkCands=cands;
+  if(!cands.length)return '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Нічого не знайдено</div>';
+  let h="";
+  cands.forEach((t,i)=>{
+    h+=`<div onclick="pickLink(${i})" style="padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">`;
+    h+=`<div style="font-size:12px;font-weight:600">${esc((t.commercial||"").slice(0,90))}</div>`;
+    h+=`<div style="font-size:10px;color:var(--accent)">${esc(t.supplier)}${t.contract?` · ${esc(t.contract.slice(0,50))}`:""}</div>`;
+    h+=`<div style="font-size:10px;color:var(--muted)">К-сть: ${fmt(t.qty)} ${esc(t.unit||"")}${t.price!=null?` · ${fmt(t.price)} грн`:""}</div>`;
+    h+=`</div>`;
+  });
+  return h;
+}
+function pickLink(i){
+  const t=(window._linkCands||[])[i];if(!t||!linkDialogFor)return;
+  ordersManualLink[linkDialogFor]={s:t.supplier,c:t.contract||"",cn:norm(t.commercial).slice(0,80)};
+  saveManualLink();
+  linkDialogFor=null;
+  rebuildMatches();
+}
+function unlinkManual(idx){
+  const n=(window._monCards||[])[idx];if(!n||!ordersManualLink[n])return;
+  if(!confirm("Відв'язати позицію від угоди?\n"+n))return;
+  delete ordersManualLink[n];
+  saveManualLink();
+  rebuildMatches();
+}
+function buildLinkDialog(){
+  let h="";
+  h+='<div onclick="closeLinkDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:110;display:flex;align-items:center;justify-content:center;padding:8px">';
+  h+='<div onclick="event.stopPropagation()" style="background:rgba(40,44,50,.98);border:1px solid var(--border);border-radius:16px;padding:16px;max-width:560px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.5)">';
+  h+='<div style="font-size:15px;font-weight:700;margin-bottom:4px">🔗 Прив\'язати до угоди</div>';
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Закупка: <strong style="color:var(--text)">${esc(linkDialogFor||"")}</strong></div>`;
+  h+=`<div style="position:relative;margin-bottom:8px"><input id="link-search-input" value="${esc(linkQuery)}" placeholder="Назва, постачальник, МНН..." oninput="onLinkSearchInput(this.value)" style="width:100%;background:rgba(255,255,255,.08);border:1.5px solid rgba(34,197,94,.35);border-radius:10px;padding:10px 44px 10px 12px;color:#fff;font-size:14px;outline:none"><button class="mic-btn" onclick="startVoiceSearch('link-search-input',this)" title="Голосовий пошук">🎤</button></div>`;
+  h+='<div id="link-results-list" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;background:rgba(20,24,30,.5);min-height:200px;max-height:55vh">';
+  h+=_renderLinkResults();
+  h+='</div>';
+  h+='<button class="sort-btn" style="width:100%;padding:8px;font-size:12px;margin-top:8px" onclick="closeLinkDialog()">Скасувати</button>';
+  h+='</div></div>';
   return h;
 }
 function buildAddDialog(){
