@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 69;
+const APP_VERSION = 71;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1066,9 +1066,9 @@ return"ok";
 }
 
 // ═══════ MATCHING ═══════
-const STOP=new Set("РОЗЧИН ДЛЯ ІНФУЗІЙ ТАБЛЕТКИ КАПСУЛИ ПОРОШОК СУСПЕНЗІЯ КОНЦЕНТРАТ ЛІОФІЛІЗАТ ВКРИТІ ПО МЛ МГ Р-Н ФЛАК АМП В У І ТА АБО ЛІОФ ПОР КРАПЛІ ОЧНІ ТАБ ЕМУЛЬС АЕРОЗОЛЬ КОНЦ СУСП КАП НАШКІРН НАШКІРНИЙ ОЧН РОЗЧ-К ПЕРЕНТЕРАЛЬНОГО ЗАСТОС".split(" "));
+const STOP=new Set("РОЗЧИН ДЛЯ ІНФУЗІЙ ТАБЛЕТКИ КАПСУЛИ ПОРОШОК СУСПЕНЗІЯ КОНЦЕНТРАТ ЛІОФІЛІЗАТ ВКРИТІ ПО МЛ МГ Р-Н ФЛАК АМП В У І ТА АБО ЛІОФ ПОР КРАПЛІ ОЧНІ ТАБ ЕМУЛЬС АЕРОЗОЛЬ КОНЦ СУСП КАП НАШКІРН НАШКІРНИЙ ОЧН РОЗЧ-К ПЕРЕНТЕРАЛЬНОГО ЗАСТОС ТАБЛ КАПС МАЗЬ КРЕМ ГЕЛЬ СПРЕЙ СИРОП ЕМУЛ ЕМУЛЬСІЯ НАШКІРНА КОНЦЕНТР ПЛІВКА НАЗАЛЬНА ГРАНУЛИ ПАСТА СУПОЗИТОРІЇ КР Д Р ГРАН РОЗЧИНИ ЛІОФІЛІЗОВАНИЙ КРАП".split(" "));
 function norm(s){return s.toUpperCase().trim().replace(/®/g,"").replace(/\u00a0/g," ").replace(/\u0060/g,"'").replace(/\u2019/g,"'").replace(/\s*-\s*/g,"-").replace(/\s+/g," ")}
-function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|%|МО|Г|Л|МГ\/МЛ)$/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("(")||/^МГ\/МЛ$/i.test(c)||/^МКГ\/МЛ$/i.test(c))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
+function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3||STOP.has(c.split(/[./]/)[0])){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|МО|ОД|Г|Л|%)/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("(")||/^МГ\/МЛ$/i.test(c)||/^МКГ\/МЛ$/i.test(c))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
 function stemUk(w){if(w.length<=4)return w;for(const s of["ИНУ","ІНУ","ОНУ","АТУ","ЕТУ","ИНА","ІНА","ОМ","ІМ","ОЇ","ЕЙ","ІЙ","ОГО","ОМУ","ІВ","ІН","АМ","ЯМ","У","А","Е","І","И","Ю","Я","О"])if(w.endsWith(s)&&w.length-s.length>=4)return w.slice(0,-s.length);return w}
 function getForm(s){const u=s.toUpperCase(),f=new Set();if(/РОЗЧИН|Р-Н|Р\/Н|Д\/ІН|КОНЦ\.|КОНЦЕНТРАТ/.test(u))f.add("SOL");if(/ТАБЛ|ТАБ[\s.,]/.test(u))f.add("TAB");if(/КАПС/.test(u))f.add("CAP");if(/КРАПЛІ|КР\.ОЧН|ОЧНІ/.test(u))f.add("DRP");if(/СУПОЗИТОР/.test(u))f.add("SUP");if(/ПОРОШОК|ПОР[\s.,]|ПОР\//.test(u))f.add("PWD");if(/ЕМУЛЬС|ЕМУЛ/.test(u))f.add("EMU");if(/АЕРОЗОЛЬ/.test(u))f.add("AER");if(/СУСПЕНЗІЯ|СУСП/.test(u))f.add("SSP");if(/ІНФУЗІЙ|ІНФУЗ/.test(u))f.add("INF");if(/ІНГАЛЯЦІ/.test(u))f.add("INH");if(/ГРАНУЛИ|ГРАН/.test(u))f.add("GRN");if(/МАЗЬ/.test(u))f.add("OIN");return f}
 
@@ -1151,12 +1151,12 @@ function cDate(c){if(!c)return[9999,1,1];let m=c.match(/(?:від|Авд)\s+(\d{
 function getDosesCanon(s){
   let u=norm(s).replace(/(\d)\s+(?=\d)/g,"$1");
   // "2млн. МО" → "2000000 МО", "25 тис МО" → "25000 МО"
-  u=u.replace(/(\d+(?:[.,]\d+)?)\s*МЛН\.?\s*(?=МО)/g,(_,v)=>String(parseFloat(v.replace(",","."))*1e6)+" ");
-  u=u.replace(/(\d+(?:[.,]\d+)?)\s*ТИС\.?\s*(?=МО)/g,(_,v)=>String(parseFloat(v.replace(",","."))*1e3)+" ");
+  u=u.replace(/(\d+(?:[.,]\d+)?)\s*МЛН\.?\s*(?=МО|ОД)/g,(_,v)=>String(parseFloat(v.replace(",","."))*1e6)+" ");
+  u=u.replace(/(\d+(?:[.,]\d+)?)\s*ТИС\.?\s*(?=МО|ОД)/g,(_,v)=>String(parseFloat(v.replace(",","."))*1e3)+" ");
   const d=new Set();
-  for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){
+  for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|ОД|%|Г)(?:\/МЛ)?/g)){
     const v=parseFloat(m[1].replace(",","."));const unit=m[2];
-    if(unit==="МО"){d.add("МО"+v);continue}
+    if(unit==="МО"||unit==="ОД"){d.add("МО"+v);continue}
     let mg=v;
     if(unit==="%")mg=v*10;
     else if(unit==="Г")mg=v*1000;
