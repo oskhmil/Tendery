@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 75;
+const APP_VERSION = 76;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -3405,16 +3405,18 @@ function resolveF6NameDiag(drugName){
 
 // Auto-remove "pending" flags when F6 shows new income since the mark was set
 function cleanupPendingByIncome(){
+  // Не чіпаємо позначки, поки дані не завантажені повністю — інакше перебазація/порівняння
+  // працюють з неповним лічильником (причина хибних знять у v75).
+  if(!purchasesByWH||!Object.keys(purchasesByWH).length||!allData||!allData.length)return;
   let changed=false;
   for(const key of Object.keys(ordersPending)){
     const p=ordersPending[key];
     if(!p)continue;
-    // Міграція на позиційний підрахунок (v75): старі знімки зроблені вузьким лічильником,
-    // тому один раз перебазовуємо їх на нове значення — інакше всі позначки хибно "прийшли б".
-    if(p.pv!==2){
+    // Перебазація v3 на позиційний підрахунок: прапорець ставиться ЛИШЕ якщо нову базу
+    // вдалося порахувати. До успішної перебазації порівняння не виконується взагалі.
+    if(p.pv!==3){
       const curP=purchasedForDrugMyWarehouse(p.drugName);
-      if(curP!=null)p.purchasedAtMark=curP;
-      p.pv=2;changed=true;
+      if(curP!=null){p.purchasedAtMark=curP;p.pv=3;changed=true;}
       continue;
     }
     // Auto-remove ONLY when purchased qty at Ostap's OWN warehouse grew since the mark — a real arrival.
@@ -3445,7 +3447,7 @@ function togglePending(gi,ii,checked){
       incomeAtMark,
       purchasedAtMark,
       f6Name:f6n||null,
-      pv:2,
+      pv:3,
     };
   }else{
     delete ordersPending[key];
