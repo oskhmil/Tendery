@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 74;
+const APP_VERSION = 75;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -3318,21 +3318,28 @@ function totalPurchasedForDrug(drugName){
 // Returns null if no matching warehouse/drug found.
 function purchasedForDrugMyWarehouse(drugName){
   if(!purchasesByWH||!Object.keys(purchasesByWH).length)return null;
-  let purchName=drugName;
+  // ПОЗИЦІЙНИЙ підрахунок: сумуємо по ВСІХ назвах закупок, прив'язаних до тих самих
+  // тендерних позицій. Прихід, оформлений іншим написанням/фасовкою (Ванкобацид "поштучно"
+  // і "Ванкобацид №10" — одна тендерна позиція), тепер теж зараховується.
+  const names=new Set([drugName]);
   if(typeof findInMonitor==="function"){
     const m=findInMonitor(drugName);
-    if(m&&m.n)purchName=m.n;
+    if(m&&m.n){
+      names.add(m.n);
+      if(m.t&&m.t.length&&allData&&allData.length){
+        const keys=new Set(m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,60)));
+        for(const r of allData){
+          if(!r.t||!r.t.length||!r.pq)continue;
+          if(r.t.some(t=>keys.has(t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,60))))names.add(r.n);
+        }
+      }
+    }
   }
   let total=null;
   for(const wh of Object.keys(purchasesByWH)){
     if(!wh.toLowerCase().includes(MY_WAREHOUSE))continue;
-    const q=purchasesByWH[wh][purchName];
-    if(typeof q==="number")total=(total||0)+q;
-  }
-  if(total==null){ // fallback: try the raw drug name as key
-    for(const wh of Object.keys(purchasesByWH)){
-      if(!wh.toLowerCase().includes(MY_WAREHOUSE))continue;
-      const q=purchasesByWH[wh][drugName];
+    for(const nm of names){
+      const q=purchasesByWH[wh][nm];
       if(typeof q==="number")total=(total||0)+q;
     }
   }
@@ -3402,6 +3409,14 @@ function cleanupPendingByIncome(){
   for(const key of Object.keys(ordersPending)){
     const p=ordersPending[key];
     if(!p)continue;
+    // Міграція на позиційний підрахунок (v75): старі знімки зроблені вузьким лічильником,
+    // тому один раз перебазовуємо їх на нове значення — інакше всі позначки хибно "прийшли б".
+    if(p.pv!==2){
+      const curP=purchasedForDrugMyWarehouse(p.drugName);
+      if(curP!=null)p.purchasedAtMark=curP;
+      p.pv=2;changed=true;
+      continue;
+    }
     // Auto-remove ONLY when purchased qty at Ostap's OWN warehouse grew since the mark — a real arrival.
     // Форма 6 income is deliberately NOT used: it isn't warehouse-specific and changes when the report
     // period is updated, which falsely cleared pending marks even though no purchase had arrived.
@@ -3430,6 +3445,7 @@ function togglePending(gi,ii,checked){
       incomeAtMark,
       purchasedAtMark,
       f6Name:f6n||null,
+      pv:2,
     };
   }else{
     delete ordersPending[key];
