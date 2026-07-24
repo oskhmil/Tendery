@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 76;
+const APP_VERSION = 78;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -318,6 +318,7 @@ let f6MonthsEnabled=null;  // null=all enabled; array of booleans otherwise
 
 // Замовлення state
 let ordersHorizon=30;                  // days to cover
+let ordersExhaustedOpen=false;         // розгорнутий список вичерпаних угод
 let ordersSupplierChoice={};           // {drugName: "supplierName"}
 let ordersAllocOverride={};            // {purchaseName: {supplier: qty}} — розподіл приходу, заданий у застосунку
 let ordersManualLink={};               // {purchaseName: {s,c,cn}} — ручна прив'язка закупки до тендерної позиції
@@ -2407,7 +2408,7 @@ function venBadge(cat){
 // Build order lines: one entry per drug with deficit > 0 that has a matching tender.
 // Returns {lines:[{drugName, f6Unit, f6Stock, need, deficit, monitor, suppliers:[{name, tenders, pk, packUnit, packDeficit, tenderRemaining, pricePerPack, totalCost}]}], noMatch:[], noTender:[]}
 function buildOrders(horizon){
-if(!f6Months.length)return{lines:[],noMatch:[],noTender:[],needPurchases:allData.length===0};
+if(!f6Months.length)return{lines:[],noMatch:[],noTender:[],exhausted:[],needPurchases:allData.length===0};
 const analysis=analyzeF6(f6Months,horizon,f6MonthsEnabled);
 const noMatch=[],noTender=[],lines=[];
 for(const it of analysis.items){
@@ -2459,10 +2460,18 @@ if(lines.length>1){
 }
 // Apply supplier choice: for each line pick chosen supplier (or first)
 const bySupplierGroup={};
+const exhausted=[]; // позиції з дефіцитом, але без ємності по жодній угоді
 for(const l of lines){
 const chosen=ordersSupplierChoice[l.drugName]||(l.suppliers[0]&&l.suppliers[0].name);
 const sup=l.suppliers.find(s=>s.name===chosen)||l.suppliers[0];
 if(!sup)continue;
+// ВИЧЕРПАНІ УГОДИ: якщо по ЖОДНОМУ постачальнику цієї позиції нема ємності (замовити 0),
+// позиція не потрапляє в замовлення — йде в окремий список-нагадування (⚠ вгорі Замовлень).
+const maxAvail=Math.max(...l.suppliers.map(s=>Math.floor((s.tenderRemaining||0)/(s.pk||1))));
+if(maxAvail<=0&&l.deficit>0){
+  exhausted.push({drugName:l.drugName,deficit:l.deficit,f6Unit:l.f6Unit,suppliers:l.suppliers.map(s=>s.name).join(", ")});
+  continue;
+}
 // Compute packs to order: ceil(deficit / pk). User override wins.
 const pk=sup.pk||1;
 const packsNeeded=Math.ceil(l.deficit/pk);
@@ -2536,7 +2545,7 @@ if(cost!=null)bySupplierGroup[m.supplier].total+=cost;
 if(_manualMigrated){_manualMigrated=false;saveManual();} // одноразове збереження знімків
 
 const supplierOrders=Object.values(bySupplierGroup).sort((a,b)=>a.name.localeCompare(b.name,"uk"));
-return{lines,noMatch,noTender,supplierOrders,needPurchases:allData.length===0};
+return{lines,noMatch,noTender,supplierOrders,exhausted,needPurchases:allData.length===0};
 }
 
 // Unified visibility predicate — GLOBAL so that buildOrderText/exportOrderCSV/sendOrder* can call it
@@ -2571,10 +2580,22 @@ let h='';
 h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
 h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Горизонт замовлення — на скільки днів забезпечити</div>';
 h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
-for(const d of [15,30,60,90,180])h+=`<button class="mode-btn${ordersHorizon===d?" active":""}" onclick="ordersHorizon=${d};render()">${d} днів</button>`;
+for(const d of [7,15,21,30,60,90,180])h+=`<button class="mode-btn${ordersHorizon===d?" active":""}" onclick="ordersHorizon=${d};render()">${d===21?"21 день":d+" днів"}</button>`;
 h+='</div>';
 h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4;font-style:italic">Дефіцит з Моніторингу розходу (потреба на N днів − залишок) → округлено до цілих упаковок.</div>';
 h+='</div>';
+// ⚠ Нагадування про вичерпані угоди (позиції не включені в замовлення)
+if(data.exhausted&&data.exhausted.length){
+  h+=`<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.35);border-radius:12px;padding:10px 14px;margin-bottom:12px;cursor:pointer" onclick="ordersExhaustedOpen=!ordersExhaustedOpen;render()">`;
+  h+=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;color:#fca5a5">⚠ <strong>${data.exhausted.length}</strong> ${data.exhausted.length===1?"позиція":data.exhausted.length<5?"позиції":"позицій"} з дефіцитом, але вичерпаною угодою — не включено в замовлення</span><span style="margin-left:auto;color:var(--muted);font-size:12px">${ordersExhaustedOpen?"▲":"▼"}</span></div>`;
+  if(ordersExhaustedOpen){
+    for(const x of data.exhausted){
+      h+=`<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px"><div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.drugName)}<span style="color:var(--muted);font-size:10px"> · ${esc(x.suppliers)}</span></div><div style="flex-shrink:0;color:#fca5a5;font-weight:600">дефіцит ${fmt(Math.ceil(x.deficit))} ${esc(x.f6Unit)}</div></div>`;
+    }
+    h+=`<div style="font-size:10px;color:var(--muted);margin-top:6px;font-style:italic">Повний перелік вичерпаних угод — Моніторинг закупівель → фільтр "Вибрано".</div>`;
+  }
+  h+='</div>';
+}
 
 if(data.needPurchases){
 h+='<div style="padding:10px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);border-radius:10px;color:#93c5fd;font-size:12px;margin-bottom:10px">⏳ Завантажуємо дані закупівель та тендерів у фоні... Сторінка автоматично оновиться.</div>';
