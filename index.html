@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 78;
+const APP_VERSION = 79;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2525,6 +2525,23 @@ const mnn=m.mnn||mnnForDrug(m.drugName);
 const ven=getVen(m.drugName,mnn);
 const abc=getAbc(m.drugName);
 if(!bySupplierGroup[m.supplier])bySupplierGroup[m.supplier]={name:m.supplier,items:[],total:0};
+// ── Злиття з автоматичною карткою тієї ж тендерної позиції ──
+// Автоматична картка живе в одиницях Форми 6 (флак), ручна — в тендерних (пач), тому
+// суму дефіцитів рахувати не можна. Беремо БІЛЬШУ з двох кількостей: дефіцит покритий
+// і явне рішення користувача не зменшене. Ручний запис лишається у сховищі — якщо
+// автоматична картка зникне, ручна знову з'явиться окремо.
+const _mkey=(m.contract||"")+"|"+norm(m.commercial||m.drugName).slice(0,60);
+const _twin=bySupplierGroup[m.supplier].items.find(it=>!it.manual&&((it.contract||"")+"|"+norm(it.commercial||it.drugName).slice(0,60))===_mkey);
+if(_twin){
+  const before=_twin.costEstimate||0;
+  if(!_twin.overridden&&packs>_twin.packsToOrder){_twin.packsToOrder=packs;_twin.autoPacks=Math.max(_twin.autoPacks||0,packs);}
+  _twin.qtyInPurchaseUnits=_twin.packsToOrder*(_twin.pk||1);
+  _twin.costEstimate=_twin.pricePerPack!=null?_twin.packsToOrder*_twin.pricePerPack:null;
+  bySupplierGroup[m.supplier].total+=(_twin.costEstimate||0)-before;
+  _twin.manualId=m.id;_twin.manualMergedPacks=packs;_twin.manualMergedUnit=m.packUnit||"уп";
+  if(arrivedQty>0){_twin.arrivedQty=arrivedQty;_twin.arrivedUnit=arrivedUnit;}
+  continue;
+}
 bySupplierGroup[m.supplier].items.push({
 drugName:m.drugName,
 commercial:m.commercial||m.drugName,
@@ -2794,6 +2811,7 @@ for(const cName of contractNames){
     if(it.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">МНН: ${esc(it.mnn).slice(0,80)}</div>`;
     if(it.manual&&it.arrivedQty>0)h+=`<div style="font-size:11px;color:var(--accent);background:rgba(34,197,94,.12);border-radius:6px;padding:4px 8px;margin-bottom:4px">🚚 Надійшло: <strong>+${fmt(it.arrivedQty)} ${esc(it.arrivedUnit||"од")}</strong> з моменту додавання — перевір, можливо позицію можна прибрати</div>`;
     if(it.mergedFrom&&it.mergedFrom.length)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з: ${esc(it.mergedFrom.join("; ")).slice(0,160)}</div>`;
+    if(it.manualMergedPacks!=null)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з ручною позицією (${fmt(it.manualMergedPacks)} ${esc(it.manualMergedUnit||"уп")}) — замовляємо більше з двох</div>`;
     h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
     h+=`<div class="row"><span>Потреба (на ${ordersHorizon}д):</span><strong>${fmt(Math.round(it.need))} ${esc(it.f6Unit)}</strong></div>`;
     h+=`<div class="row"><span>Дефіцит:</span><strong style="color:var(--danger)">${fmt(Math.round(it.deficit))} ${esc(it.f6Unit)}</strong></div>`;
@@ -2841,9 +2859,10 @@ for(const cName of contractNames){
     h+=`<input type="checkbox" ${isUserHidden?"checked":""} onchange="toggleHidden(${gi},${ii},this.checked)" onclick="event.stopPropagation()" style="accent-color:#f59e0b">`;
     h+=isUserHidden?"🚫 Приховано з замовлення":"🚫 Приховати з замовлення";
     h+='</label>';
-    if(it.manual){
-      h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger)" onclick="removeManual(${JSON.stringify(it.manualId).replace(/"/g,'&quot;')})">🗑 Видалити вручну</button>`;
-    }else{
+    if(it.manual||it.manualMergedPacks!=null){
+      h+=`<button class="sort-btn" style="font-size:10px;color:var(--danger)" onclick="removeManual(${JSON.stringify(it.manualId).replace(/"/g,'&quot;')})">🗑 ${it.manual?"Видалити вручну":"Прибрати ручну частину"}</button>`;
+    }
+    if(!it.manual){
       h+=`<button class="sort-btn" style="font-size:10px;color:var(--muted)" onclick="excludeOrderItemByIdx(${gi},${ii})">✕ Прибрати з замовлення</button>`;
     }
     h+='</div>';
