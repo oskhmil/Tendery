@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 79;
+const APP_VERSION = 80;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2417,24 +2417,35 @@ if(ordersExcluded[it.name])continue;
 const monitor=findInMonitor(it.name);
 if(!monitor){noMatch.push(it);continue}
 if(!monitor.t||!monitor.t.length){noTender.push({it,monitor});continue}
-// Group monitor tenders by supplier
+// Сестринські рядки: після розподілу одна позиція існує кількома рядками Моніторингу
+// (по одному на постачальника). Збираємо постачальників з УСІХ таких рядків, щоб замовлення
+// могло піти до того, у кого ще лишилась ємність.
+const _rows=allData.filter(d=>d.n===monitor.n&&d.t&&d.t.length);
 const bySup={};
-for(const t of monitor.t){
-if(!bySup[t.s])bySup[t.s]={name:t.s,tenders:[],pk:t.pk||1,packUnit:t.tu||monitor.du,tenderRemaining:0,pricePerPack:null};
-bySup[t.s].tenders.push(t);
+for(const _row of _rows){
+const _unalloc=!!(_row.multi&&!_row.alloc); // споживання ще не приписане постачальникам
+const _cqBySup={};
+for(const t of _row.t){
+if(!bySup[t.s])bySup[t.s]={name:t.s,tenders:[],pk:t.pk||1,packUnit:t.tu||monitor.du,tenderRemaining:0,pricePerPack:null,_seen:{}};
+const s=bySup[t.s];
+const _k=(t.c||"")+"|"+t.cn;
+if(s._seen[_k])continue;
+s._seen[_k]=1;
+s.tenders.push(t);
 // Use consistent pk across supplier (take max if differ)
-if((t.pk||1)>bySup[t.s].pk)bySup[t.s].pk=t.pk||1;
-if(t.p!=null&&bySup[t.s].pricePerPack==null)bySup[t.s].pricePerPack=t.p;
+if((t.pk||1)>s.pk)s.pk=t.pk||1;
+if(t.p!=null&&s.pricePerPack==null)s.pricePerPack=t.p;
+_cqBySup[t.s]=(_cqBySup[t.s]||0)+(t.cq||t.tq);
 }
-// For each supplier, compute remaining tender capacity in f6 units (cq = already in purchase-units)
-for(const s of Object.values(bySup)){
-const totalCq=s.tenders.reduce((acc,t)=>acc+(t.cq||t.tq),0);
-const totalConsumed=monitor.pq||0;
-// Approx remaining per supplier is proportional to its share — simple: use monitor.rem if 1 supplier
-s.tenderRemaining=Math.max(0,totalCq-(monitor.multi?0:totalConsumed));
-// If single supplier, use monitor.rem directly
-if(!monitor.multi)s.tenderRemaining=monitor.rem;
+// Ємність з цього рядка: для розподілених і одноосібних рядків — їхній фактичний залишок
+// (rem), інакше вичерпаний постачальник виглядав би вільним. Для нерозподілених multi
+// залишок невідомий, тому беремо повний обсяг угоди, як і раніше.
+for(const _sn of Object.keys(_cqBySup)){
+if(_unalloc)bySup[_sn].tenderRemaining+=_cqBySup[_sn];
+else bySup[_sn].tenderRemaining+=Math.max(0,_row.rem||0);
 }
+}
+for(const s of Object.values(bySup))delete s._seen;
 const suppliers=Object.values(bySup);
 lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,deficit:it.deficit,dailyRate:it.dailyRate,monitor,suppliers});
 }
@@ -2462,12 +2473,17 @@ if(lines.length>1){
 const bySupplierGroup={};
 const exhausted=[]; // позиції з дефіцитом, але без ємності по жодній угоді
 for(const l of lines){
-const chosen=ordersSupplierChoice[l.drugName]||(l.suppliers[0]&&l.suppliers[0].name);
-const sup=l.suppliers.find(s=>s.name===chosen)||l.suppliers[0];
+// Вибір постачальника: явний вибір користувача завжди перемагає. Якщо вибору нема —
+// беремо першого, у кого ЩЕ Є вільна ємність по угоді (а не просто першого в списку),
+// щоб вичерпаний постачальник не тягнув на себе замовлення, коли є альтернатива.
+const _avail=s=>Math.floor((s.tenderRemaining||0)/(s.pk||1));
+const chosen=ordersSupplierChoice[l.drugName];
+let sup=chosen?l.suppliers.find(s=>s.name===chosen):null;
+if(!sup)sup=l.suppliers.find(s=>_avail(s)>0)||l.suppliers[0];
 if(!sup)continue;
 // ВИЧЕРПАНІ УГОДИ: якщо по ЖОДНОМУ постачальнику цієї позиції нема ємності (замовити 0),
 // позиція не потрапляє в замовлення — йде в окремий список-нагадування (⚠ вгорі Замовлень).
-const maxAvail=Math.max(...l.suppliers.map(s=>Math.floor((s.tenderRemaining||0)/(s.pk||1))));
+const maxAvail=Math.max(...l.suppliers.map(_avail));
 if(maxAvail<=0&&l.deficit>0){
   exhausted.push({drugName:l.drugName,deficit:l.deficit,f6Unit:l.f6Unit,suppliers:l.suppliers.map(s=>s.name).join(", ")});
   continue;
