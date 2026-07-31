@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 80;
+const APP_VERSION = 81;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1186,7 +1186,7 @@ function dosesOk(pD,tD){
 
 // Ефективний розподіл: лист "Розподіл" з Excel + правки в застосунку (застосунок має пріоритет по препарату)
 function _effOverrides(){return Object.assign({},overrides,ordersAllocOverride)}
-function rebuildMatches(){if(!parsedPurchases||!parsedPurchases.length)return;allData=matchAll(parsedPurchases,allTenders,_effOverrides(),ordersManualLink);render()}
+function rebuildMatches(){if(!parsedPurchases||!parsedPurchases.length)return;allData=matchAll(parsedPurchases,allTenders,_effOverrides(),ordersManualLink);_fimCache=new Map();render()}
 function matchAll(purchases,tenders,ov={},links={}){
 const results=[];
 for(const p of purchases){
@@ -1361,7 +1361,7 @@ const[pB,tB]=await Promise.all([fetch(GDRIVE_P).then(r=>{if(!r.ok)throw new Erro
 purchasesRaw=pB;tendersRaw=tB;
 const p=parsePurchases(pB);const t=parseTenders(tB);
 overrides=parseAllocations(tB);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides(),ordersManualLink);lastUpdated=new Date();
+parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides(),ordersManualLink);_fimCache=new Map();lastUpdated=new Date();
 saveCache();
 // Only jump to main screen if user isn't currently on home
 const onHome=!document.getElementById("home-screen").classList.contains("hidden");
@@ -1380,7 +1380,7 @@ showLoader("Обробка файлів...");
 setTimeout(()=>{
 const p=parsePurchases(purchasesRaw);const t=parseTenders(tendersRaw);
 overrides=parseAllocations(tendersRaw);
-parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides(),ordersManualLink);lastUpdated=new Date();
+parsedPurchases=p;allTenders=t;allData=matchAll(p,t,_effOverrides(),ordersManualLink);_fimCache=new Map();lastUpdated=new Date();
 saveCache();showMain();
 },50);
 }
@@ -1996,7 +1996,16 @@ function setAllF6Months(on){f6MonthsEnabled=f6Months.map(()=>!!on);render()}
 
 // Fuzzy-find a monitor item for a Форма 6 drug name.
 // Uses the full matchAll rule set: brand + form + container + dose + volume + pack size + suffix.
+// Кеш findInMonitor: функція чиста відносно allData, а викликається сотні разів
+// (злиття псевдонімів Ф6). Кеш скидається щоразу, коли allData перебудовується.
+let _fimCache=new Map();
 function findInMonitor(name){
+if(_fimCache.has(name))return _fimCache.get(name);
+const r=_findInMonitorRaw(name);
+_fimCache.set(name,r);
+return r;
+}
+function _findInMonitorRaw(name){
 if(!allData.length)return null;
 // 1. Exact match
 const exact=allData.find(d=>d.n===name);if(exact)return exact;
@@ -2407,11 +2416,65 @@ function venBadge(cat){
 // ═══════ ЗАМОВЛЕННЯ ═══════
 // Build order lines: one entry per drug with deficit > 0 that has a matching tender.
 // Returns {lines:[{drugName, f6Unit, f6Stock, need, deficit, monitor, suppliers:[{name, tenders, pk, packUnit, packDeficit, tenderRemaining, pricePerPack, totalCost}]}], noMatch:[], noTender:[]}
+// Зводить позиції Форми 6, які ведуть на ту саму тендерну позицію, в одну.
+// Один препарат буває записаний у Ф6 кількома назвами (різні відділення або перейменування
+// в 1С). Раніше злиття працювало лише між позиціями, що МАЮТЬ дефіцит, тому запас, який
+// лежав під іншою назвою, не зараховувався — і препарат виглядав нульовим (кейс Сангери).
+// Розхід рахуємо з ПОМІСЯЧНИХ даних усіх назв (а не сумою готових ставок — це б задвоїло
+// історію), запас — з кінцевих залишків в ОСТАННЬОМУ активному місяці, тож назви, що зникли
+// з Ф6, дають 0 і не роздувають запас.
+function mergeF6Aliases(items,horizon){
+  if(!f6Months.length||typeof findInMonitor!=="function")return items;
+  const mask=Array.isArray(f6MonthsEnabled)&&f6MonthsEnabled.length===f6Months.length?f6MonthsEnabled:f6Months.map(()=>true);
+  const activeIdx=[];for(let i=0;i<f6Months.length;i++)if(mask[i])activeIdx.push(i);
+  if(!activeIdx.length)return items;
+  const lastActive=activeIdx[activeIdx.length-1];
+  const out=[],groups=new Map();
+  for(const it of items){
+    const m=findInMonitor(it.name);
+    const key=(m&&m.t&&m.t.length)?m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,60)).sort().join("~"):null;
+    if(!key){out.push(it);continue}
+    if(!groups.has(key)){const c=Object.assign({},it);c._al=[it];groups.set(key,c);out.push(c);continue}
+    groups.get(key)._al.push(it);
+  }
+  for(const g of groups.values()){
+    const al=g._al;delete g._al;
+    if(al.length<2)continue;
+    // Головна назва — та, що є в останньому активному місяці; серед таких — з більшим розходом
+    let main=al[0],best=-1;
+    for(const a of al){
+      const live=!!(a.monthly&&a.monthly[lastActive]);
+      const score=(live?1e9:0)+(a.dailyRate||0);
+      if(score>best){best=score;main=a}
+    }
+    let firstIdx=-1,totalUsed=0,totalDays=0,stock=0;
+    for(let i=0;i<f6Months.length;i++){
+      if(!mask[i])continue;
+      let used=0,any=false;
+      for(const a of al){
+        const d=a.monthly&&a.monthly[i];if(!d)continue;
+        if(d.used>0||d.income>0||d.start>0||d.end>0)any=true;
+        used+=d.used||0;
+      }
+      if(any&&firstIdx<0)firstIdx=i;
+      if(firstIdx>=0){totalUsed+=used;totalDays+=f6Months[i].days}
+    }
+    for(const a of al){const d=a.monthly&&a.monthly[lastActive];if(d)stock+=d.end||0}
+    g.name=main.name;g.unit=main.unit||g.unit;
+    g.stock=stock;g.totalUsed=totalUsed;g.totalDays=totalDays;
+    g.dailyRate=totalDays>0?totalUsed/totalDays:0;
+    g.need=g.dailyRate*horizon;
+    g.deficit=Math.max(0,g.need-g.stock);
+    g.daysLeft=g.dailyRate>0?g.stock/g.dailyRate:99999;
+    g.mergedFrom=al.filter(a=>a.name!==g.name).map(a=>a.name);
+  }
+  return out;
+}
 function buildOrders(horizon){
 if(!f6Months.length)return{lines:[],noMatch:[],noTender:[],exhausted:[],needPurchases:allData.length===0};
 const analysis=analyzeF6(f6Months,horizon,f6MonthsEnabled);
 const noMatch=[],noTender=[],lines=[];
-for(const it of analysis.items){
+for(const it of mergeF6Aliases(analysis.items,horizon)){
 if(it.deficit<=0)continue;
 if(ordersExcluded[it.name])continue;
 const monitor=findInMonitor(it.name);
@@ -2447,7 +2510,7 @@ else bySup[_sn].tenderRemaining+=Math.max(0,_row.rem||0);
 }
 for(const s of Object.values(bySup))delete s._seen;
 const suppliers=Object.values(bySup);
-lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,deficit:it.deficit,dailyRate:it.dailyRate,monitor,suppliers});
+lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,deficit:it.deficit,dailyRate:it.dailyRate,monitor,suppliers,mergedFrom:it.mergedFrom||null});
 }
 // ── Об'єднання рядків, що вказують на ту саму тендерну позицію ──
 // Одна й та сама позиція буває записана у Формі6 різними назвами (різні відділення/склади:
@@ -4204,7 +4267,7 @@ function showUpdateBanner(remoteV){
 (function(){
 const c=loadCache();
 if(c){
-allData=c.data||[];allTenders=c.tenders||[];
+allData=c.data||[];allTenders=c.tenders||[];_fimCache=new Map();
 lastUpdated=c.ts?new Date(c.ts):null;
 if(c.purchases)parsedPurchases=c.purchases;
 if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;if(c.purchasesMonthly)purchasesMonthly=c.purchasesMonthly;
