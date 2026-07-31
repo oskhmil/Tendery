@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 81;
+const APP_VERSION = 82;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -858,17 +858,119 @@ else{f6ShowAllCards=false;f6Filter=f6Filter===k?"all":k}
 render();
 }
 
+
+// ═══════ СХОВИЩЕ ═══════
+// CACHE_KEY = "tendertrack_v"+APP_VERSION, тобто кожне оновлення створювало
+// НОВИЙ ключ, а старий лишався в localStorage назавжди. На пристроях осіли
+// v64, v68, v69… по ~600 КБ кожен. Оскільки GitHub Pages дає один спільний
+// origin на весь акаунт, ці залишки з'їдали 5 МБ разом із Liki.on!
+// і валили запис кешу обом додаткам.
+//
+// Тепер: важкий кеш живе в IndexedDB (сотні МБ замість 5), а старі версійні
+// ключі вичищаються при старті. У localStorage лишаються тільки дрібні
+// налаштування користувача (USER_KEY+суфікси) — це кілька КБ.
+const IDB=(function(){
+  const DB="tendertrack",ST="kv",V=1;let dbp=null;
+  function open(){
+    if(dbp)return dbp;
+    dbp=new Promise((res,rej)=>{
+      let rq;try{rq=indexedDB.open(DB,V)}catch(e){rej(e);return}
+      rq.onupgradeneeded=()=>{const d=rq.result;if(!d.objectStoreNames.contains(ST))d.createObjectStore(ST)};
+      rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
+    });
+    return dbp;
+  }
+  function run(mode,fn){
+    return open().then(db=>new Promise((res,rej)=>{
+      const tx=db.transaction(ST,mode),st=tx.objectStore(ST);let out;
+      const rq=fn(st);if(rq)rq.onsuccess=()=>{out=rq.result};
+      tx.oncomplete=()=>res(out);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);
+    }));
+  }
+  return{
+    available:(function(){try{return typeof indexedDB!=="undefined"&&indexedDB!==null}catch(e){return false}})(),
+    get:k=>run("readonly",s=>s.get(k)),
+    set:(k,v)=>run("readwrite",s=>s.put(v,k)),
+    del:k=>run("readwrite",s=>s.delete(k)),
+  };
+})();
+
+const Store=(function(){
+  const mem=new Map();let readyP=null,degraded=false;const errs=[];
+  function note(op,e){errs.push({op,name:e&&e.name,msg:e&&e.message});if(errs.length>10)errs.shift();
+    console.warn("[store]",op,e&&e.name,e&&e.message)}
+
+  // Прибирання чужих поколінь: усе tendertrack_v<N>, крім поточного.
+  function purgeOldVersions(){
+    let freed=0,n=0;
+    try{
+      const kill=[];
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i);
+        if(k&&/^tendertrack_v\d+$/.test(k)&&k!==CACHE_KEY)kill.push(k);
+      }
+      kill.forEach(k=>{
+        try{freed+=(localStorage.getItem(k)||"").length;localStorage.removeItem(k);n++}catch(_){}
+      });
+      if(n)console.info("[store] прибрано старих версій:",n,"звільнено",Math.round(freed/1024),"КБ");
+    }catch(_){}
+    return{count:n,freed};
+  }
+
+  function hydrate(){
+    if(readyP)return readyP;
+    readyP=(async()=>{
+      purgeOldVersions();
+      if(!IDB.available){
+        degraded=true;
+        try{const v=localStorage.getItem(CACHE_KEY);if(v!=null)mem.set(CACHE_KEY,v)}catch(_){}
+        return;
+      }
+      let v=null;
+      try{v=await IDB.get(CACHE_KEY)}catch(e){note("get",e)}
+      if(v!=null){mem.set(CACHE_KEY,String(v));return}
+      // переносимо поточний ключ зі старого localStorage
+      let legacy=null;try{legacy=localStorage.getItem(CACHE_KEY)}catch(_){}
+      if(legacy==null)return;
+      mem.set(CACHE_KEY,legacy);
+      try{await IDB.set(CACHE_KEY,legacy);try{localStorage.removeItem(CACHE_KEY)}catch(_){}}
+      catch(e){note("migrate",e)}
+    })().catch(e=>{degraded=true;note("hydrate",e)});
+    return readyP;
+  }
+
+  return{
+    ready:hydrate,degraded:()=>degraded,errors:()=>errs.slice(),purgeOldVersions,
+    get:k=>(mem.has(k)?mem.get(k):null),
+    set(k,v){
+      const s=String(v);mem.set(k,s);
+      if(IDB.available&&!degraded){
+        IDB.set(k,s).catch(e=>{note("set",e);try{localStorage.setItem(k,s)}catch(e2){note("set-ls",e2)}});
+        return true;
+      }
+      try{localStorage.setItem(k,s);return true}catch(e){note("set-ls",e);return false}
+    },
+    stats(){
+      let ls=0;const items={};
+      try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
+        const n=(localStorage.getItem(k)||"").length+k.length;items[k]=n;ls+=n}}catch(_){}
+      return{cache:(mem.get(CACHE_KEY)||"").length,ls,items,degraded,errors:errs.length};
+    },
+  };
+})();
+Store.ready();
+
 // ═══════ CACHE ═══════
 function saveCache(){
 const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,purchasesMonthly:purchasesMonthly,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
-try{localStorage.setItem(CACHE_KEY,JSON.stringify(payload))}catch(e){
-console.warn("Cache full, saving without purchases",e);
-try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}))}catch{}
+if(!Store.set(CACHE_KEY,JSON.stringify(payload))){
+console.warn("Cache full, saving without purchases");
+Store.set(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}));
 }
 }
 function loadCache(){
 try{
-const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
+const r=Store.get(CACHE_KEY);if(!r)return null;
 const d=JSON.parse(r);
 if(!d)return null;
 // Revive dates in f6
@@ -4264,7 +4366,10 @@ function showUpdateBanner(remoteV){
 }
 
 // ═══════ INIT ═══════
-(function(){
+(async function(){
+// Дзеркало Store наповнюється з IndexedDB асинхронно — без цього очікування
+// перший loadCache() повернув би null і додаток стартував би порожнім.
+await Store.ready();
 const c=loadCache();
 if(c){
 allData=c.data||[];allTenders=c.tenders||[];_fimCache=new Map();
