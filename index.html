@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 82;
+const APP_VERSION = 83;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -858,119 +858,17 @@ else{f6ShowAllCards=false;f6Filter=f6Filter===k?"all":k}
 render();
 }
 
-
-// ═══════ СХОВИЩЕ ═══════
-// CACHE_KEY = "tendertrack_v"+APP_VERSION, тобто кожне оновлення створювало
-// НОВИЙ ключ, а старий лишався в localStorage назавжди. На пристроях осіли
-// v64, v68, v69… по ~600 КБ кожен. Оскільки GitHub Pages дає один спільний
-// origin на весь акаунт, ці залишки з'їдали 5 МБ разом із Liki.on!
-// і валили запис кешу обом додаткам.
-//
-// Тепер: важкий кеш живе в IndexedDB (сотні МБ замість 5), а старі версійні
-// ключі вичищаються при старті. У localStorage лишаються тільки дрібні
-// налаштування користувача (USER_KEY+суфікси) — це кілька КБ.
-const IDB=(function(){
-  const DB="tendertrack",ST="kv",V=1;let dbp=null;
-  function open(){
-    if(dbp)return dbp;
-    dbp=new Promise((res,rej)=>{
-      let rq;try{rq=indexedDB.open(DB,V)}catch(e){rej(e);return}
-      rq.onupgradeneeded=()=>{const d=rq.result;if(!d.objectStoreNames.contains(ST))d.createObjectStore(ST)};
-      rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
-    });
-    return dbp;
-  }
-  function run(mode,fn){
-    return open().then(db=>new Promise((res,rej)=>{
-      const tx=db.transaction(ST,mode),st=tx.objectStore(ST);let out;
-      const rq=fn(st);if(rq)rq.onsuccess=()=>{out=rq.result};
-      tx.oncomplete=()=>res(out);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);
-    }));
-  }
-  return{
-    available:(function(){try{return typeof indexedDB!=="undefined"&&indexedDB!==null}catch(e){return false}})(),
-    get:k=>run("readonly",s=>s.get(k)),
-    set:(k,v)=>run("readwrite",s=>s.put(v,k)),
-    del:k=>run("readwrite",s=>s.delete(k)),
-  };
-})();
-
-const Store=(function(){
-  const mem=new Map();let readyP=null,degraded=false;const errs=[];
-  function note(op,e){errs.push({op,name:e&&e.name,msg:e&&e.message});if(errs.length>10)errs.shift();
-    console.warn("[store]",op,e&&e.name,e&&e.message)}
-
-  // Прибирання чужих поколінь: усе tendertrack_v<N>, крім поточного.
-  function purgeOldVersions(){
-    let freed=0,n=0;
-    try{
-      const kill=[];
-      for(let i=0;i<localStorage.length;i++){
-        const k=localStorage.key(i);
-        if(k&&/^tendertrack_v\d+$/.test(k)&&k!==CACHE_KEY)kill.push(k);
-      }
-      kill.forEach(k=>{
-        try{freed+=(localStorage.getItem(k)||"").length;localStorage.removeItem(k);n++}catch(_){}
-      });
-      if(n)console.info("[store] прибрано старих версій:",n,"звільнено",Math.round(freed/1024),"КБ");
-    }catch(_){}
-    return{count:n,freed};
-  }
-
-  function hydrate(){
-    if(readyP)return readyP;
-    readyP=(async()=>{
-      purgeOldVersions();
-      if(!IDB.available){
-        degraded=true;
-        try{const v=localStorage.getItem(CACHE_KEY);if(v!=null)mem.set(CACHE_KEY,v)}catch(_){}
-        return;
-      }
-      let v=null;
-      try{v=await IDB.get(CACHE_KEY)}catch(e){note("get",e)}
-      if(v!=null){mem.set(CACHE_KEY,String(v));return}
-      // переносимо поточний ключ зі старого localStorage
-      let legacy=null;try{legacy=localStorage.getItem(CACHE_KEY)}catch(_){}
-      if(legacy==null)return;
-      mem.set(CACHE_KEY,legacy);
-      try{await IDB.set(CACHE_KEY,legacy);try{localStorage.removeItem(CACHE_KEY)}catch(_){}}
-      catch(e){note("migrate",e)}
-    })().catch(e=>{degraded=true;note("hydrate",e)});
-    return readyP;
-  }
-
-  return{
-    ready:hydrate,degraded:()=>degraded,errors:()=>errs.slice(),purgeOldVersions,
-    get:k=>(mem.has(k)?mem.get(k):null),
-    set(k,v){
-      const s=String(v);mem.set(k,s);
-      if(IDB.available&&!degraded){
-        IDB.set(k,s).catch(e=>{note("set",e);try{localStorage.setItem(k,s)}catch(e2){note("set-ls",e2)}});
-        return true;
-      }
-      try{localStorage.setItem(k,s);return true}catch(e){note("set-ls",e);return false}
-    },
-    stats(){
-      let ls=0;const items={};
-      try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
-        const n=(localStorage.getItem(k)||"").length+k.length;items[k]=n;ls+=n}}catch(_){}
-      return{cache:(mem.get(CACHE_KEY)||"").length,ls,items,degraded,errors:errs.length};
-    },
-  };
-})();
-Store.ready();
-
 // ═══════ CACHE ═══════
 function saveCache(){
 const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,purchasesMonthly:purchasesMonthly,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
-if(!Store.set(CACHE_KEY,JSON.stringify(payload))){
-console.warn("Cache full, saving without purchases");
-Store.set(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}));
+try{localStorage.setItem(CACHE_KEY,JSON.stringify(payload))}catch(e){
+console.warn("Cache full, saving without purchases",e);
+try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}))}catch{}
 }
 }
 function loadCache(){
 try{
-const r=Store.get(CACHE_KEY);if(!r)return null;
+const r=localStorage.getItem(CACHE_KEY);if(!r)return null;
 const d=JSON.parse(r);
 if(!d)return null;
 // Revive dates in f6
@@ -2691,12 +2589,19 @@ if(costEstimate!=null)bySupplierGroup[sup.name].total+=costEstimate;
 // Append manually-added items
 for(const m of ordersManual){
 if(!m||!m.supplier||!m.drugName)continue;
-// Відстеження приходу: порівнюємо закуплене по тендерній позиції зі знімком на момент додавання
-let arrivedQty=0,arrivedUnit="";
-if(allData.length){
+// Відстеження приходу. ПРІОРИТЕТ — Форма 6: вона охоплює лише мій склад, тому приріст
+// у ній означає, що товар прийшов саме сюди. Закуплено (все ТМО) — запасний варіант,
+// коли позиції нема у Формі 6; там приріст може бути й від іншого відділення.
+let arrivedQty=0,arrivedUnit="",arrivedSrc="";
+const _f6=_f6IncomeForTender(m.commercial||m.drugName,m.drugName);
+if(_f6){
+  if(m.baseF6==null){m.baseF6=_f6.q;m.baseF6Unit=_f6.u;_manualMigrated=true;}
+  else if(_f6.q>m.baseF6){arrivedQty=_f6.q-m.baseF6;arrivedUnit=_f6.u||m.baseF6Unit||"";arrivedSrc="Форма 6";}
+}
+if(!arrivedQty&&allData.length){
   const cur=_tenderPurchasedQty(m.supplier,m.contract||"",m.commercial||m.drugName);
   if(m.baseQty==null){m.baseQty=cur.q;m.baseUnit=cur.u;_manualMigrated=true;} // міграція старих позицій
-  else if(cur.q>m.baseQty){arrivedQty=cur.q-m.baseQty;arrivedUnit=cur.u||m.baseUnit||"";}
+  else if(cur.q>m.baseQty&&!_f6){arrivedQty=cur.q-m.baseQty;arrivedUnit=cur.u||m.baseUnit||"";arrivedSrc="Закуплено (все ТМО)";}
 }
 const packs=Math.max(0,parseInt(m.packsToOrder)||0);
 const pk=m.pk||1;
@@ -2720,7 +2625,7 @@ if(_twin){
   _twin.costEstimate=_twin.pricePerPack!=null?_twin.packsToOrder*_twin.pricePerPack:null;
   bySupplierGroup[m.supplier].total+=(_twin.costEstimate||0)-before;
   _twin.manualId=m.id;_twin.manualMergedPacks=packs;_twin.manualMergedUnit=m.packUnit||"уп";
-  if(arrivedQty>0){_twin.arrivedQty=arrivedQty;_twin.arrivedUnit=arrivedUnit;}
+  if(arrivedQty>0){_twin.arrivedQty=arrivedQty;_twin.arrivedUnit=arrivedUnit;_twin.arrivedSrc=arrivedSrc;}
   continue;
 }
 bySupplierGroup[m.supplier].items.push({
@@ -2736,7 +2641,7 @@ qtyInPurchaseUnits:packs*pk,
 pricePerPack:price,costEstimate:cost,
 altSuppliers:[],allSuppliers:[m.supplier],
 ven,abc,emlCandidate:false,overridden:false,autoPacks:packs,
-manual:true,manualId:m.id,arrivedQty,arrivedUnit,
+manual:true,manualId:m.id,arrivedQty,arrivedUnit,arrivedSrc,
 });
 if(cost!=null)bySupplierGroup[m.supplier].total+=cost;
 }
@@ -2990,7 +2895,7 @@ for(const cName of contractNames){
     h+='</div>';
     if(it.commercial!==it.drugName)h+=`<div class="mnn">${esc(it.commercial).slice(0,100)}</div>`;
     if(it.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">МНН: ${esc(it.mnn).slice(0,80)}</div>`;
-    if(it.manual&&it.arrivedQty>0)h+=`<div style="font-size:11px;color:var(--accent);background:rgba(34,197,94,.12);border-radius:6px;padding:4px 8px;margin-bottom:4px">🚚 Надійшло: <strong>+${fmt(it.arrivedQty)} ${esc(it.arrivedUnit||"од")}</strong> з моменту додавання — перевір, можливо позицію можна прибрати</div>`;
+    if(it.arrivedQty>0)h+=`<div style="font-size:11px;color:var(--accent);background:rgba(34,197,94,.12);border-radius:6px;padding:4px 8px;margin-bottom:4px">🚚 Надійшло: <strong>+${fmt(it.arrivedQty)} ${esc(it.arrivedUnit||"од")}</strong> з моменту додавання${it.arrivedSrc?` · <span style="color:var(--muted)">${esc(it.arrivedSrc)}</span>`:""} — перевір, можливо позицію можна прибрати</div>`;
     if(it.mergedFrom&&it.mergedFrom.length)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з: ${esc(it.mergedFrom.join("; ")).slice(0,160)}</div>`;
     if(it.manualMergedPacks!=null)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з ручною позицією (${fmt(it.manualMergedPacks)} ${esc(it.manualMergedUnit||"уп")}) — замовляємо більше з двох</div>`;
     h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
@@ -3454,6 +3359,7 @@ function confirmAdd(){
   const packs=Math.max(1,ordersAddPacks|0);
   const id="m_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
   const base=_tenderPurchasedQty(t.supplier,t.contract||"",t.commercial);
+  const bf6=_f6IncomeForTender(t.commercial,t.commercial);
   ordersManual.push({
     id,
     drugName:t.commercial,
@@ -3466,6 +3372,7 @@ function confirmAdd(){
     packsToOrder:packs,
     pricePerPack:t.price!=null?t.price:null,
     baseQty:base.q,baseUnit:base.u,
+    baseF6:bf6?bf6.q:null,baseF6Unit:bf6?bf6.u:"",
   });
   saveManual();
   closeAddDialog();
@@ -3473,6 +3380,20 @@ function confirmAdd(){
 // Скільки вже закуплено по конкретній тендерній позиції (для відстеження приходу
 // ручних позицій). Порівнюємо по позиції, а не по назві закупки — тому прихід
 // буде помічено незалежно від того, яким написанням його оформить 1С.
+// Надходження по МОЄМУ складу з Форми 6. Форма 6 — це лише склад №4, тому для
+// відстеження приходу вона точніша за Закуплено (яке охоплює все ТМО і тому росте
+// й тоді, коли товар отримало інше відділення).
+function _f6IncomeForTender(cn,drugName){
+  if(!f6Months||!f6Months.length||typeof resolveF6Name!=="function")return null;
+  const n=resolveF6Name(cn)||resolveF6Name(drugName);
+  if(!n)return null;
+  let q=0,u="";
+  for(const m of f6Months){
+    const d=m.drugs&&m.drugs[n];
+    if(d&&typeof d.income==="number"){q+=d.income;if(!u)u=d.unit||""}
+  }
+  return{q,u,name:n};
+}
 function _tenderPurchasedQty(sup,contract,cn){
   let q=0,u="";
   if(!allData||!allData.length)return{q:0,u:""};
@@ -4077,6 +3998,25 @@ const ORDER_DELIVERY_NOTE="Прошу здійснити поставку дан
 function _orderHeaderBlock(boldMark){const m=boldMark||"";return ORDER_HEADER+"\n\n"+m+ORDER_DELIVERY_NOTE+m+"\n\n"}
 
 // Items eligible for export/sending: visible, not hidden, and NOT already ordered (очікується)
+// Пояснює, ЧОМУ в замовленні нема чого експортувати: рахує, скільки позицій
+// відсіяно кожною причиною (очікується / приховано / фільтр бюджету-VEN-ABC).
+function _emptyOrderReason(g){
+  if(!g||!g.items||!g.items.length)return "У цього постачальника нема позицій.";
+  let pend=0,hid=0,filt=0;
+  for(const it of g.items){
+    const k=it.drugName+"|"+g.name;
+    if(ordersPending[k])pend++;
+    else if(ordersHidden[k])hid++;
+    else if(!_orderVisible(it,g.name))filt++;
+  }
+  const parts=[];
+  if(pend)parts.push(`${pend} позначено «⏳ очікується» (вже замовлено)`);
+  if(hid)parts.push(`${hid} приховано з замовлення`);
+  if(filt)parts.push(`${filt} відсіяно фільтром (бюджет / VEN / ABC)`);
+  if(!parts.length)return "Нема позицій для експорту.";
+  return "Нема що надсилати:\n\n• "+parts.join("\n• ")+
+    (pend?"\n\nЩоб включити позицію в нове замовлення — зніми галочку «Замовлено, очікується» на її картці.":"");
+}
 function _exportableItems(g){
   return g.items.filter(it=>{
     if(!_orderVisible(it,g.name))return false;
@@ -4140,7 +4080,7 @@ return false;
 function copyOrderText(gi){
 if(event)event.stopPropagation();
 const txt=buildOrderText(gi);
-if(!txt){alert("Нема що копіювати (порожнє замовлення або поза бюджетом)");return}
+if(!txt){alert(_emptyOrderReason((window._ordersGroups||[])[gi]));return}
 const btn=event&&event.target;
 const flash=()=>{if(!btn)return;const old=btn.textContent;btn.textContent="✓ Скопійовано";setTimeout(()=>{btn.textContent=old},1500)};
 if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -4209,7 +4149,7 @@ function sendOrderEmail(gi){
   if(event)event.stopPropagation();
   const g=(window._ordersGroups||[])[gi];if(!g)return;
   const fullTxt=buildOrderText(gi);
-  if(!fullTxt){alert("Нема що надсилати");return}
+  if(!fullTxt){alert(_emptyOrderReason(g));return}
   // Email can handle longer bodies, but some clients still choke >2KB
   const subject=`Замовлення 1ТМО Львів — ${g.name}`;
   const body=fullTxt;
@@ -4226,7 +4166,7 @@ function sendOrderEmail(gi){
 function _sendVia(gi,builder,label,boldMark){
   const g=(window._ordersGroups||[])[gi];if(!g)return;
   const full=buildOrderText(gi,boldMark);
-  if(!full){alert("Нема що надсилати");return}
+  if(!full){alert(_emptyOrderReason(g));return}
   // Always copy full text so user can paste if deep-link can't fit everything
   const copied=_copyToClipboardSilent(full);
   // Prefer short text in deep-link if full > limit
@@ -4254,7 +4194,7 @@ function sendOrderTelegram(gi){
   if(event)event.stopPropagation();
   const g=(window._ordersGroups||[])[gi];if(!g)return;
   const full=buildOrderText(gi,"**");
-  if(!full){alert("Нема що надсилати");return}
+  if(!full){alert(_emptyOrderReason(g));return}
   const isMobile=/iPhone|iPad|Android|Mobile/i.test(navigator.userAgent);
   // Open BEFORE clipboard to preserve user gesture on mobile
   if(isMobile){
@@ -4366,10 +4306,7 @@ function showUpdateBanner(remoteV){
 }
 
 // ═══════ INIT ═══════
-(async function(){
-// Дзеркало Store наповнюється з IndexedDB асинхронно — без цього очікування
-// перший loadCache() повернув би null і додаток стартував би порожнім.
-await Store.ready();
+(function(){
 const c=loadCache();
 if(c){
 allData=c.data||[];allTenders=c.tenders||[];_fimCache=new Map();
