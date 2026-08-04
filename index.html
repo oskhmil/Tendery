@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 83;
+const APP_VERSION = 84;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2474,7 +2474,8 @@ function buildOrders(horizon){
 if(!f6Months.length)return{lines:[],noMatch:[],noTender:[],exhausted:[],needPurchases:allData.length===0};
 const analysis=analyzeF6(f6Months,horizon,f6MonthsEnabled);
 const noMatch=[],noTender=[],lines=[];
-for(const it of mergeF6Aliases(analysis.items,horizon)){
+const _mergedItems=mergeF6Aliases(analysis.items,horizon);
+for(const it of _mergedItems){
 if(it.deficit<=0)continue;
 if(ordersExcluded[it.name])continue;
 const monitor=findInMonitor(it.name);
@@ -2607,6 +2608,13 @@ const packs=Math.max(0,parseInt(m.packsToOrder)||0);
 const pk=m.pk||1;
 const price=m.pricePerPack;
 const cost=price!=null?packs*price:null;
+// Реальні дані з Форми 6 (мій склад) для ручної картки. Раніше тут стояли нулі,
+// і картка виглядала так, ніби препарату нема, хоча він лежить на складі.
+let _mStock=0,_mNeed=0,_mDef=0,_mUnit=m.f6Unit||m.packUnit||"";
+if(_f6&&_f6.name){
+  const _fi=_mergedItems.find(x=>x.name===_f6.name||(x.mergedFrom&&x.mergedFrom.indexOf(_f6.name)>=0));
+  if(_fi){_mStock=_fi.stock;_mNeed=_fi.need;_mDef=_fi.deficit;_mUnit=_fi.unit||_mUnit;}
+}
 const mnn=m.mnn||mnnForDrug(m.drugName);
 const ven=getVen(m.drugName,mnn);
 const abc=getAbc(m.drugName);
@@ -2633,7 +2641,7 @@ drugName:m.drugName,
 commercial:m.commercial||m.drugName,
 contract:m.contract||"",
 mnn,
-f6Unit:m.f6Unit||m.packUnit||"",stock:0,need:0,deficit:0,
+f6Unit:_mUnit,stock:_mStock,need:_mNeed,deficit:_mDef,
 packUnit:m.packUnit||"уп",pk,
 packsNeeded:packs,packsAvailable:m.packsAvailable||packs,
 packsToOrder:packs,shortfall:0,
