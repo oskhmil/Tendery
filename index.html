@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 89;
+const APP_VERSION = 90;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -3603,24 +3603,36 @@ function cleanupPendingByIncome(){
   // Не чіпаємо позначки, поки дані не завантажені повністю — інакше перебазація/порівняння
   // працюють з неповним лічильником (причина хибних знять у v75).
   if(!purchasesByWH||!Object.keys(purchasesByWH).length||!allData||!allData.length)return;
+  if(!f6Months||!f6Months.length)return; // Форма 6 тепер теж джерело — без неї не рахуємо
   let changed=false;
   for(const key of Object.keys(ordersPending)){
     const p=ordersPending[key];
     if(!p)continue;
-    // Перебазація v3 на позиційний підрахунок: прапорець ставиться ЛИШЕ якщо нову базу
-    // вдалося порахувати. До успішної перебазації порівняння не виконується взагалі.
-    if(p.pv!==3){
+    const f6n=p.f6Name||(typeof resolveF6Name==="function"?resolveF6Name(p.drugName):null);
+    // Перебазація v4: знімки обох лічильників (склад із Закуплено + надходження з Форми 6).
+    // Прапорець ставиться ЛИШЕ якщо хоч один порахувався — інакше пробуємо наступного разу.
+    if(p.pv!==4){
       const curP=purchasedForDrugMyWarehouse(p.drugName);
-      if(curP!=null){p.purchasedAtMark=curP;p.pv=3;changed=true;}
+      const curI=f6n?totalIncomeForDrug(f6n):null;
+      if(curP!=null||curI!=null){
+        if(curP!=null)p.purchasedAtMark=curP;
+        if(curI!=null){p.incomeAtMark=curI;p.f6Name=f6n;}
+        p.pv=4;changed=true;
+      }
       continue;
     }
-    // Auto-remove ONLY when purchased qty at Ostap's OWN warehouse grew since the mark — a real arrival.
-    // Форма 6 income is deliberately NOT used: it isn't warehouse-specific and changes when the report
-    // period is updated, which falsely cleared pending marks even though no purchase had arrived.
-    if(p.purchasedAtMark!=null){
-      const curP=purchasedForDrugMyWarehouse(p.drugName);
-      if(curP!=null&&curP>p.purchasedAtMark){delete ordersPending[key];changed=true;}
+    // Знімаємо позначку, якщо прихід видно ХОЧ В ОДНОМУ джерелі:
+    //  • Закуплено по моєму складу (purchasesByWH) — там є розбивка по складах;
+    //  • надходження з Форми 6 — вона охоплює ЛИШЕ склад №4, тож приріст у ній
+    //    означає прихід саме сюди (кейс Папаверину: у Закуплено його записали на інший склад).
+    let arrived=false;
+    const curP=purchasedForDrugMyWarehouse(p.drugName);
+    if(p.purchasedAtMark!=null&&curP!=null&&curP>p.purchasedAtMark)arrived=true;
+    if(!arrived&&f6n&&p.incomeAtMark!=null){
+      const curI=totalIncomeForDrug(f6n);
+      if(curI>p.incomeAtMark)arrived=true;
     }
+    if(arrived){delete ordersPending[key];changed=true;}
   }
   if(changed)savePending();
 }
@@ -3642,7 +3654,7 @@ function togglePending(gi,ii,checked){
       incomeAtMark,
       purchasedAtMark,
       f6Name:f6n||null,
-      pv:3,
+      pv:4,
     };
   }else{
     delete ordersPending[key];
