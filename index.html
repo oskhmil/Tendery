@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 90;
+const APP_VERSION = 91;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1015,7 +1015,19 @@ const endQ=typeof r[7]==="number"?r[7]:0;
 if(!unit&&startQ===0&&incomeQ===0&&usedQ===0&&endQ===0)continue;
 drugs[nm]={unit,start:startQ,income:incomeQ,used:usedQ,end:endQ};
 }
-months.push({sheet:sn,periodStart,periodEnd,days,drugs});
+// Аномалія періоду: аркуш названо місяцем, а період у шапці значно довший
+// (типовий випадок — в аркуш залито дані за весь рік). Такі дані занижують
+// середньоденний розхід у рази, тому попереджаємо одразу після завантаження.
+let periodWarn=null;
+{
+  const MN=["СІЧЕНЬ","ЛЮТИЙ","БЕРЕЗЕНЬ","КВІТЕНЬ","ТРАВЕНЬ","ЧЕРВЕНЬ","ЛИПЕНЬ","СЕРПЕНЬ","ВЕРЕСЕНЬ","ЖОВТЕНЬ","ЛИСТОПАД","ГРУДЕНЬ"];
+  const mi=MN.indexOf(String(sn).trim().toUpperCase());
+  if(mi>=0){
+    const expect=new Date(periodEnd.getFullYear(),mi+1,0).getDate();
+    if(days>expect+7)periodWarn={sheet:sn,days,expect};
+  }
+}
+months.push({sheet:sn,periodStart,periodEnd,days,drugs,periodWarn});
 }
 if(!months.length)throw new Error("Форма 6: не знайдено жодного листа з коректним періодом. Перевірте формат (рядок 9 має містити 'за період з DD.MM.YYYY до DD.MM.YYYY').");
 months.sort((a,b)=>(a.periodEnd-b.periodEnd)||(a.periodStart-b.periodStart));
@@ -1912,6 +1924,7 @@ const enabledCount=f6MonthsEnabled.filter(Boolean).length;
 h+='<div style="background:rgba(20,24,30,.7);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px">';
 // Period header
 if(analysis.periodStart){
+h+=_f6PeriodWarnHtml();
 h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Період аналізу (${analysis.daysTotal} днів)</div>`;
 h+=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${fmtDate(analysis.periodStart)} — ${fmtDate(analysis.periodEnd)}</div>`;
 }else{
@@ -2739,6 +2752,7 @@ for(const d of [7,15,21,30,60,90,180])h+=`<button class="mode-btn${ordersHorizon
 h+='</div>';
 h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4;font-style:italic">Дефіцит з Моніторингу розходу (потреба на N днів − залишок) → округлено до цілих упаковок.</div>';
 h+='</div>';
+h+=_f6PeriodWarnHtml();
 // ⚠ Нагадування про вичерпані угоди (позиції не включені в замовлення)
 if(data.exhausted&&data.exhausted.length){
   h+=`<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.35);border-radius:12px;padding:10px 14px;margin-bottom:12px;cursor:pointer" onclick="ordersExhaustedOpen=!ordersExhaustedOpen;render()">`;
@@ -4065,6 +4079,14 @@ function _orderHeaderBlock(boldMark){const m=boldMark||"";return ORDER_HEADER+"\
 // Items eligible for export/sending: visible, not hidden, and NOT already ordered (очікується)
 // Пояснює, ЧОМУ в замовленні нема чого експортувати: рахує, скільки позицій
 // відсіяно кожною причиною (очікується / приховано / фільтр бюджету-VEN-ABC).
+// Банер про аркуші Форми 6 з аномальним періодом (залито дані за весь рік замість місяця).
+function _f6PeriodWarnHtml(){
+  if(!f6Months||!f6Months.length)return "";
+  const bad=f6Months.filter(m=>m&&m.periodWarn);
+  if(!bad.length)return "";
+  const list=bad.map(m=>`«${esc(m.periodWarn.sheet)}» — ${m.periodWarn.days} дн. замість ~${m.periodWarn.expect}`).join("; ");
+  return `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:#fca5a5">⚠ У Формі 6 період аркуша значно довший за місяць: ${list}.<div style="font-size:11px;color:var(--muted);margin-top:3px">Схоже, в аркуш залито дані за весь рік. Розхід і дефіцити будуть <strong>заниженими</strong> — перезалийте файл помісячно.</div></div>`;
+}
 function _emptyOrderReason(g){
   if(!g||!g.items||!g.items.length)return "У цього постачальника нема позицій.";
   let pend=0,hid=0,filt=0;
