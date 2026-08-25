@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 95;
+const APP_VERSION = 96;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1857,7 +1857,10 @@ d.t.forEach(t=>{
   h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;
   // Per-tender consumption breakdown (only if cascading populated consumed)
   if(typeof t.consumed==="number"&&t.cq>0){
-    const tCons=t.consumed;
+    // Споживання по цій тендерній позиції ЦІЛКОМ (усі номенклатури 1С), а не лише поточна
+    // картка — інакше блок показував завищений залишок (натрію хлорид 100 мл: 151 330 замість 44 420).
+    const _tShare=_tenderConsumedFor(t);
+    const tCons=_tShare!=null?_tShare:t.consumed;
     const tRem=Math.max(0,t.cq-tCons);
     const tPct=Math.round(tCons/t.cq*1000)/10;
     let cDisp=tCons,rDisp=tRem,unitDisp=d.u;
@@ -4339,6 +4342,19 @@ function sendOrderWhatsApp(gi){
 // кількома номенклатурами з 1С (скло/пластик, різні написання) — кожна з них окремий рядок
 // Моніторингу. Без цього кожна картка віднімала від угоди лише свої закупівлі й показувала
 // завищений залишок (напр. натрію хлорид 400 мл: 64 790 і 114 020 замість справжніх 55 190).
+// Скільки всього спожито по конкретній тендерній позиції (усі номенклатури 1С разом).
+function _tenderConsumedFor(t){
+  if(!t||!allData.length)return null;
+  const k=t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100);
+  let q=0,rows=0;
+  for(const r of allData){
+    if(!r.pq||!r.t)continue;
+    for(const x of r.t){
+      if(x.s+"|"+(x.c||"")+"|"+norm(x.cn).slice(0,100)===k){q+=(typeof x.consumed==="number"?x.consumed:r.pq);rows++;break}
+    }
+  }
+  return rows>1?q:null;   // одна номенклатура — лишаємо як було
+}
 let _shareCache=null;
 function _tenderShare(d){
   if(!d.t||!d.t.length||!allData.length)return null;
