@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 91;
+const APP_VERSION = 93;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1371,7 +1371,7 @@ results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,d
 }
 }
 const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
-const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,60);if(!um[k])um[k]=[];um[k].push(t)}
+const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,100);if(!um[k])um[k]=[];um[k].push(t)}
 for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
 return results;
 }
@@ -1852,6 +1852,9 @@ d.t.forEach(t=>{
 });
 if(!ht)h+=`<div style="padding:8px 0;font-size:13px;color:var(--muted)">Без тендерної угоди</div><button class="sort-btn" style="width:100%;padding:8px;font-size:12px;color:var(--accent);border-color:rgba(34,197,94,.4)" onclick="event.stopPropagation();openLinkDialog(${idx})">🔗 Прив'язати до угоди</button>`;
 if(ht&&ordersManualLink[d.n])h+=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="font-size:11px;color:var(--accent)">🔗 Прив'язано вручну</span><button class="sort-btn" style="font-size:10px;color:var(--danger)" onclick="event.stopPropagation();unlinkManual(${idx})">✕ Відв'язати</button></div>`;
+// Перепризначення угоди для позицій, які матчер прив'язав не туди
+// (напр. 1С пише "амп.", а фактично флакони — автоматика йде за даними і помиляється).
+else if(ht)h+=`<button class="sort-btn" style="width:100%;padding:7px;font-size:11px;color:var(--muted);margin-top:6px" onclick="event.stopPropagation();openLinkDialog(${idx})">🔗 Прив'язати до іншої угоди</button>`;
 h+=`</div></div>`;
 });}
 }else{
@@ -1881,14 +1884,23 @@ h+=`<div class="agr-con">${hl(a.contract,searchMode==="contract"?q:"")}</div>`;
 h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
 h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
 a.items.forEach(it=>{
-const pm=allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60)));
-let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit;
-if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,60)===norm(it.commercial).slice(0,60));const pk=tc?tc.pk:1;const consRaw=pm.pq;const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const remRaw=tc?(tc.cq-consRaw):it.qty-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;consDisp=consInTU;remDisp=remInTU;pctDisp=pm.pct;if(pk>1)dispUnit=it.unit}
+// Одна тендерна позиція часто набирається кількома назвами з 1С (скляні + пластикові
+// пляшки, різні написання). Раніше тут стояв .find() і рахувалась ЛИШЕ ПЕРША назва,
+// через що "Вибрано" в Угодах було занижене. Тепер сумуємо всі прив'язані рядки.
+const pms=allData.filter(d=>d.pq>0&&d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,100)===norm(it.commercial).slice(0,100)));
+const pm=pms[0]||allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,100)===norm(it.commercial).slice(0,100)));
+let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit,consParts=null;
+if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,100)===norm(it.commercial).slice(0,100));const pk=tc?tc.pk:1;
+const consRaw=pms.reduce((s,d)=>s+(d.pq||0),0);
+const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const cap=tc?tc.cq:it.qty*(pk>1?pk:1);const remRaw=cap-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;
+consDisp=consInTU;remDisp=remInTU;pctDisp=cap>0?Math.round(consRaw/cap*1000)/10:pm.pct;if(pk>1)dispUnit=it.unit;
+if(pms.length>1)consParts=pms.map(d=>`${d.n.slice(0,42)}: ${fmt(pk>1?Math.round(d.pq/pk*100)/100:d.pq)}`);}
 h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
 h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
 h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
 if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
-if(consDisp!=null){h+=`<div class="row"><span>Вибрано:</span><strong style="color:${remDisp<=0?"var(--danger)":"var(--green)"}">${fmt(consDisp)} (зал: ${fmt(remDisp)})</strong></div>`;if(pctDisp!=null)h+=`<div class="row"><span>Вибірка:</span><strong style="color:${pctDisp>=100?"var(--danger)":pctDisp>=80?"var(--warn)":"var(--green)"}">${pctDisp}%</strong></div>`}
+if(consDisp!=null){h+=`<div class="row"><span>Вибрано:</span><strong style="color:${remDisp<=0?"var(--danger)":"var(--green)"}">${fmt(consDisp)} (зал: ${fmt(remDisp)})</strong></div>`;if(pctDisp!=null)h+=`<div class="row"><span>Вибірка:</span><strong style="color:${pctDisp>=100?"var(--danger)":pctDisp>=80?"var(--warn)":"var(--green)"}">${pctDisp}%</strong></div>`;
+if(consParts)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">складається з: ${esc(consParts.join(" · "))}</div>`;}
 else h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">Не знайдено в закупівлях</div>`;
 h+=`</div>`;
 });
@@ -2480,7 +2492,7 @@ function mergeF6Aliases(items,horizon){
   const out=[],groups=new Map();
   for(const it of items){
     const m=findInMonitor(it.name);
-    const key=(m&&m.t&&m.t.length)?m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,60)).sort().join("~"):null;
+    const key=(m&&m.t&&m.t.length)?m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100)).sort().join("~"):null;
     if(!key){out.push(it);continue}
     if(!groups.has(key)){const c=Object.assign({},it);c._al=[it];groups.set(key,c);out.push(c);continue}
     groups.get(key)._al.push(it);
@@ -2566,7 +2578,7 @@ lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,defici
 // "конц. для р-ну/інф." vs "р-н д/ін."). Ключ — повний набір тендерних позицій (пост+угода+назва).
 // Головним лишається рядок з більшим дефіцитом; його назва — ключ для ручних дій (сховати/кількість).
 if(lines.length>1){
-  const posKey=l=>l.monitor.t.map(t=>t.s+"|"+t.c+"|"+norm(t.cn).slice(0,60)).sort().join("~");
+  const posKey=l=>l.monitor.t.map(t=>t.s+"|"+t.c+"|"+norm(t.cn).slice(0,100)).sort().join("~");
   const seen={};const merged=[];
   for(const l of lines){
     const k=posKey(l);
@@ -2672,8 +2684,8 @@ if(!bySupplierGroup[m.supplier])bySupplierGroup[m.supplier]={name:m.supplier,ite
 // суму дефіцитів рахувати не можна. Беремо БІЛЬШУ з двох кількостей: дефіцит покритий
 // і явне рішення користувача не зменшене. Ручний запис лишається у сховищі — якщо
 // автоматична картка зникне, ручна знову з'явиться окремо.
-const _mkey=(m.contract||"")+"|"+norm(m.commercial||m.drugName).slice(0,60);
-const _twin=bySupplierGroup[m.supplier].items.find(it=>!it.manual&&((it.contract||"")+"|"+norm(it.commercial||it.drugName).slice(0,60))===_mkey);
+const _mkey=(m.contract||"")+"|"+norm(m.commercial||m.drugName).slice(0,100);
+const _twin=bySupplierGroup[m.supplier].items.find(it=>!it.manual&&((it.contract||"")+"|"+norm(it.commercial||it.drugName).slice(0,100))===_mkey);
 if(_twin){
   const before=_twin.costEstimate||0;
   // Ручна кількість зменшується на те, що вже надійшло (у закупівельних одиницях),
@@ -3464,10 +3476,10 @@ function _f6IncomeForTender(cn,drugName){
 function _tenderPurchasedQty(sup,contract,cn){
   let q=0,u="";
   if(!allData||!allData.length)return{q:0,u:""};
-  const key=norm(cn).slice(0,60);
+  const key=norm(cn).slice(0,100);
   for(const r of allData){
     if(!r.t||!r.t.length||!r.pq)continue;
-    if(r.t.some(t=>t.s===sup&&(t.c||"")===(contract||"")&&norm(t.cn).slice(0,60)===key)){q+=r.pq;if(!u)u=r.u||""}
+    if(r.t.some(t=>t.s===sup&&(t.c||"")===(contract||"")&&norm(t.cn).slice(0,100)===key)){q+=r.pq;if(!u)u=r.u||""}
   }
   return{q,u};
 }
@@ -3536,10 +3548,10 @@ function purchasedForDrugMyWarehouse(drugName){
     if(m&&m.n){
       names.add(m.n);
       if(m.t&&m.t.length&&allData&&allData.length){
-        const keys=new Set(m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,60)));
+        const keys=new Set(m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100)));
         for(const r of allData){
           if(!r.t||!r.t.length||!r.pq)continue;
-          if(r.t.some(t=>keys.has(t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,60))))names.add(r.n);
+          if(r.t.some(t=>keys.has(t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100))))names.add(r.n);
         }
       }
     }
