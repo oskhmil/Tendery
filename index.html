@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 96;
+const APP_VERSION = 97;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1158,6 +1158,12 @@ function tokMatch(pt,tt){if(!pt.length||!tt.length)return false;const p0=pt[0],t
 // Перевіряється ДО збігу перших токенів, бо там часто спільна МНН ("КАЛЬЦІЮ").
 if(pt.length>=2&&tt.length>=2&&brandSuffixConflict(pt[1],tt[1]))return false;
 if(p0===t0)return true;if(brandSuffixConflict(p0,t0))return false;const pp=p0.split("-"),tp=t0.split("-");if((pp.length>1||tp.length>1)&&pp[0]===tp[0]&&pp[0].length>=4)return true;if(p0.length>=6&&t0.startsWith(p0))return true;if(t0.length>=6&&p0.startsWith(t0))return true;const ps=stemUk(p0),ts=stemUk(t0);if(ps===ts&&ps.length>=5)return true;if(ps.length>=5&&ts.startsWith(ps))return true;if(ts.length>=5&&ps.startsWith(ts))return true;if(pp.length>1||tp.length>1){const pps=stemUk(pp[0]),tps=stemUk(tp[0]);if(pps===tps&&pps.length>=4)return true;if(pps.length>=5&&tps.startsWith(pps))return true;if(tps.length>=5&&pps.startsWith(tps))return true}const pn=p0.replace(/И/g,"І"),tn=t0.replace(/И/g,"І");if(pn===tn&&pn.length>=4)return true;if(pn.length>=6&&tn.startsWith(pn))return true;if(tn.length>=6&&pn.startsWith(tn))return true;if(pt.length>=2){const c=pt.slice(0,2).join("-");if(c===t0)return true}if(tt.length>=2){const c=tt.slice(0,2).join("-");if(c===p0)return true}return false}
+// Порівняння назв тендерних позицій. Раніше порівнювались перші 100 символів, і це давало
+// дві помилки: (а) назву обрізали ДО нормалізації, тож знак ® зменшував довжину на символ
+// і ключі переставали збігатися; (б) деякі позиції (Норадреналін 4 мл / 8 мл) розходяться
+// аж на 101-му символі. Тепер нормалізуємо спершу, а порівнюємо по спільній довжині.
+function cnKey(s){return norm(s||"").slice(0,200)}
+function cnEq(a,b){const x=cnKey(a),y=cnKey(b);const n=Math.min(x.length,y.length);return n>0&&x.slice(0,n)===y.slice(0,n)}
 function setsOverlap(a,b){for(const x of a)if(b.has(x))return true;return false}
 const CF=new Set(["SOL","INF","PWD"]);function formsOk(pF,tF){if(!pF.size||!tF.size)return true;if(setsOverlap(pF,tF))return true;return[...pF].some(f=>CF.has(f))&&[...tF].some(f=>CF.has(f))}
 function extractPk(n){
@@ -1274,7 +1280,7 @@ if(matched.length>1){
 }
 }
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
-let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
+let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,200),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
 const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
 let tInfo=allTI;
 const ovEntry=isMulti?ov[p.name]:null;
@@ -1386,8 +1392,8 @@ results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,d
 }
 }
 const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
-const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=t.commercial.slice(0,100);if(!um[k])um[k]=[];um[k].push(t)}
-for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
+const um={};for(let i=0;i<tenders.length;i++){if(used.has(i))continue;const t=tenders[i],k=cnKey(t.commercial);if(!um[k])um[k]=[];um[k].push(t)}
+for(const[,items]of Object.entries(um)){const t0=items[0];const ti=items.map(t=>({s:t.supplier,c:t.contract,cn:t.commercial.slice(0,200),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq:t.qty,pk:1,p:t.price}));const tq=ti.reduce((s,t)=>s+t.cq,0);results.push({n:t0.commercial.slice(0,100),u:t0.unit,du:t0.unit,pq:0,dpq:0,ps:0,t:ti,tq,dtq:tq,rem:tq,drem:tq,pct:0,ml:999,multi:null,allM:null,chosen:null})}
 return results;
 }
 
@@ -1909,10 +1915,10 @@ a.items.forEach(it=>{
 // Одна тендерна позиція часто набирається кількома назвами з 1С (скляні + пластикові
 // пляшки, різні написання). Раніше тут стояв .find() і рахувалась ЛИШЕ ПЕРША назва,
 // через що "Вибрано" в Угодах було занижене. Тепер сумуємо всі прив'язані рядки.
-const pms=allData.filter(d=>d.pq>0&&d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,100)===norm(it.commercial).slice(0,100)));
-const pm=pms[0]||allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,100)===norm(it.commercial).slice(0,100)));
+const pms=allData.filter(d=>d.pq>0&&d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial)));
+const pm=pms[0]||allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial)));
 let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit,consParts=null;
-if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&norm(dt.cn).slice(0,100)===norm(it.commercial).slice(0,100));const pk=tc?tc.pk:1;
+if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial));const pk=tc?tc.pk:1;
 const consRaw=pms.reduce((s,d)=>s+(d.pq||0),0);
 const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const cap=tc?tc.cq:it.qty*(pk>1?pk:1);const remRaw=cap-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;
 consDisp=consInTU;remDisp=remInTU;pctDisp=cap>0?Math.round(consRaw/cap*1000)/10:pm.pct;if(pk>1)dispUnit=it.unit;
@@ -2514,7 +2520,7 @@ function mergeF6Aliases(items,horizon){
   const out=[],groups=new Map();
   for(const it of items){
     const m=findInMonitor(it.name);
-    const key=(m&&m.t&&m.t.length)?m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100)).sort().join("~"):null;
+    const key=(m&&m.t&&m.t.length)?m.t.map(t=>t.s+"|"+(t.c||"")+"|"+cnKey(t.cn)).sort().join("~"):null;
     if(!key){out.push(it);continue}
     if(!groups.has(key)){const c=Object.assign({},it);c._al=[it];groups.set(key,c);out.push(c);continue}
     groups.get(key)._al.push(it);
@@ -2600,7 +2606,7 @@ lines.push({drugName:it.name,f6Unit:it.unit,f6Stock:it.stock,need:it.need,defici
 // "конц. для р-ну/інф." vs "р-н д/ін."). Ключ — повний набір тендерних позицій (пост+угода+назва).
 // Головним лишається рядок з більшим дефіцитом; його назва — ключ для ручних дій (сховати/кількість).
 if(lines.length>1){
-  const posKey=l=>l.monitor.t.map(t=>t.s+"|"+t.c+"|"+norm(t.cn).slice(0,100)).sort().join("~");
+  const posKey=l=>l.monitor.t.map(t=>t.s+"|"+t.c+"|"+cnKey(t.cn)).sort().join("~");
   const seen={};const merged=[];
   for(const l of lines){
     const k=posKey(l);
@@ -2706,8 +2712,8 @@ if(!bySupplierGroup[m.supplier])bySupplierGroup[m.supplier]={name:m.supplier,ite
 // суму дефіцитів рахувати не можна. Беремо БІЛЬШУ з двох кількостей: дефіцит покритий
 // і явне рішення користувача не зменшене. Ручний запис лишається у сховищі — якщо
 // автоматична картка зникне, ручна знову з'явиться окремо.
-const _mkey=(m.contract||"")+"|"+norm(m.commercial||m.drugName).slice(0,100);
-const _twin=bySupplierGroup[m.supplier].items.find(it=>!it.manual&&((it.contract||"")+"|"+norm(it.commercial||it.drugName).slice(0,100))===_mkey);
+const _mkey=(m.contract||"")+"|"+cnKey(m.commercial||m.drugName);
+const _twin=bySupplierGroup[m.supplier].items.find(it=>!it.manual&&((it.contract||"")+"|"+cnKey(it.commercial||it.drugName))===_mkey);
 if(_twin){
   const before=_twin.costEstimate||0;
   // Ручна кількість зменшується на те, що вже надійшло (у закупівельних одиницях),
@@ -3498,10 +3504,10 @@ function _f6IncomeForTender(cn,drugName){
 function _tenderPurchasedQty(sup,contract,cn){
   let q=0,u="";
   if(!allData||!allData.length)return{q:0,u:""};
-  const key=norm(cn).slice(0,100);
+  const key=cnKey(cn);
   for(const r of allData){
     if(!r.t||!r.t.length||!r.pq)continue;
-    if(r.t.some(t=>t.s===sup&&(t.c||"")===(contract||"")&&norm(t.cn).slice(0,100)===key)){q+=r.pq;if(!u)u=r.u||""}
+    if(r.t.some(t=>t.s===sup&&(t.c||"")===(contract||"")&&cnKey(t.cn)===key)){q+=r.pq;if(!u)u=r.u||""}
   }
   return{q,u};
 }
@@ -3570,10 +3576,10 @@ function purchasedForDrugMyWarehouse(drugName){
     if(m&&m.n){
       names.add(m.n);
       if(m.t&&m.t.length&&allData&&allData.length){
-        const keys=new Set(m.t.map(t=>t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100)));
+        const keys=new Set(m.t.map(t=>t.s+"|"+(t.c||"")+"|"+cnKey(t.cn)));
         for(const r of allData){
           if(!r.t||!r.t.length||!r.pq)continue;
-          if(r.t.some(t=>keys.has(t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100))))names.add(r.n);
+          if(r.t.some(t=>keys.has(t.s+"|"+(t.c||"")+"|"+cnKey(t.cn))))names.add(r.n);
         }
       }
     }
@@ -4345,12 +4351,12 @@ function sendOrderWhatsApp(gi){
 // Скільки всього спожито по конкретній тендерній позиції (усі номенклатури 1С разом).
 function _tenderConsumedFor(t){
   if(!t||!allData.length)return null;
-  const k=t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100);
+  const k=t.s+"|"+(t.c||"")+"|"+cnKey(t.cn);
   let q=0,rows=0;
   for(const r of allData){
     if(!r.pq||!r.t)continue;
     for(const x of r.t){
-      if(x.s+"|"+(x.c||"")+"|"+norm(x.cn).slice(0,100)===k){q+=(typeof x.consumed==="number"?x.consumed:r.pq);rows++;break}
+      if(x.s+"|"+(x.c||"")+"|"+cnKey(x.cn)===k){q+=(typeof x.consumed==="number"?x.consumed:r.pq);rows++;break}
     }
   }
   return rows>1?q:null;   // одна номенклатура — лишаємо як було
@@ -4363,7 +4369,7 @@ function _tenderShare(d){
     for(const r of allData){
       if(!r.pq||!r.t)continue;
       for(const t of r.t){
-        const k=t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100);
+        const k=t.s+"|"+(t.c||"")+"|"+cnKey(t.cn);
         if(!m.has(k))m.set(k,{q:0,rows:new Set()});
         const e=m.get(k);e.q+=r.pq;e.rows.add(r.n);
       }
@@ -4372,7 +4378,7 @@ function _tenderShare(d){
   }
   let q=0,cap=0;const names=new Set();
   for(const t of d.t){
-    const e=_shareCache.map.get(t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100));
+    const e=_shareCache.map.get(t.s+"|"+(t.c||"")+"|"+cnKey(t.cn));
     if(e){q+=e.q;e.rows.forEach(n=>names.add(n))}
     cap+=t.cq||t.tq||0;
   }
