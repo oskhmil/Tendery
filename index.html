@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 94;
+const APP_VERSION = 95;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1831,8 +1831,12 @@ if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style=
 h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
 h+=`<div class="detail-grid"><div class="mini-stat"><div class="lbl">Закуплено</div><div class="val">${fmt(d.dpq)} ${esc(d.du)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
-h+=`<div class="mini-stat"><div class="lbl">Залишок</div><div class="val" style="color:${d.rem<=0?"var(--danger)":"var(--green)"}">${fmt(d.drem)} ${esc(d.du)}</div></div>`;
+const _sh=_tenderShare(d);
+const _pk=(d.t[0]&&d.t[0].pk>1)?d.t[0].pk:1;
+const _shRem=_sh?Math.max(0,_sh.cap-_sh.q):null;
+h+=`<div class="mini-stat"><div class="lbl">Залишок${_sh?" по угоді":""}</div><div class="val" style="color:${(_sh?_shRem:d.rem)<=0?"var(--danger)":"var(--green)"}">${fmt(_sh?(_pk>1?Math.round(_shRem/_pk*100)/100:_shRem):d.drem)} ${esc(d.du)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
+if(_sh)h+=`<div class="chosen-hint" style="color:#93c5fd">📊 По цій угоді разом: <strong>${fmt(_pk>1?Math.round(_sh.q/_pk*100)/100:_sh.q)}</strong> з ${fmt(_pk>1?Math.round(_sh.cap/_pk*100)/100:_sh.cap)} ${esc(d.du)} (${_sh.cap>0?Math.round(_sh.q/_sh.cap*1000)/10:0}%) — ${_sh.names.length} номенклатури 1С: ${esc(_sh.names.map(n=>n.slice(0,34)).join(" · ")).slice(0,150)}</div>`;
 if(d.multi&&!d.alloc){
 h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено між постачальниками</div><button class="alloc-apply" style="width:100%" onclick="event.stopPropagation();openAllocDialog(${idx})">✎ Розподілити</button></div>`}
 if(d.multi&&d.alloc){
@@ -4331,6 +4335,34 @@ function sendOrderWhatsApp(gi){
   _sendVia(gi,(t)=>`https://wa.me/?text=${t}`,"WhatsApp","*");
 }
 
+// Сумарне споживання по ТИХ САМИХ тендерних позиціях. Одна угода часто набирається
+// кількома номенклатурами з 1С (скло/пластик, різні написання) — кожна з них окремий рядок
+// Моніторингу. Без цього кожна картка віднімала від угоди лише свої закупівлі й показувала
+// завищений залишок (напр. натрію хлорид 400 мл: 64 790 і 114 020 замість справжніх 55 190).
+let _shareCache=null;
+function _tenderShare(d){
+  if(!d.t||!d.t.length||!allData.length)return null;
+  if(!_shareCache||_shareCache.src!==allData){
+    const m=new Map();
+    for(const r of allData){
+      if(!r.pq||!r.t)continue;
+      for(const t of r.t){
+        const k=t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100);
+        if(!m.has(k))m.set(k,{q:0,rows:new Set()});
+        const e=m.get(k);e.q+=r.pq;e.rows.add(r.n);
+      }
+    }
+    _shareCache={src:allData,map:m};
+  }
+  let q=0,cap=0;const names=new Set();
+  for(const t of d.t){
+    const e=_shareCache.map.get(t.s+"|"+(t.c||"")+"|"+norm(t.cn).slice(0,100));
+    if(e){q+=e.q;e.rows.forEach(n=>names.add(n))}
+    cap+=t.cq||t.tq||0;
+  }
+  if(names.size<2)return null;   // єдина номенклатура — показуємо як було
+  return{q,cap,names:[...names]};
+}
 function renderConflicts(el){
 const conflicts=allData.filter(d=>d.multi&&!d.alloc);
 // Позиції, розподілені в застосунку (можна скинути і перерозподілити)
