@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 93;
+const APP_VERSION = 94;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1131,7 +1131,10 @@ function containersOk(p,t){
 }
 
 function extractPkStrict(n){const m=n.match(/[№#]\s*(\d+)/);return m?parseInt(m[1]):0}
-function getDoses(s){const d=new Set();for(const m of norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){const v=m[1].replace(",","."),u=m[2];if(u==="Г")try{d.add(String(Math.round(parseFloat(v)*1000))+"МГ")}catch{d.add(v+"Г")}else d.add(v+u)}return d}
+// Дози порівнюються як текст, тому хвостові нулі нормалізуємо: "5,0 мг/мл" = "5 мг/мл".
+// Без цього ЛОНГОКАЇН 5,0 мг/мл і 5 мг/мл вважались різними препаратами.
+function _numKey(v){const f=parseFloat(v);return isFinite(f)?String(f):v}
+function getDoses(s){const d=new Set();for(const m of norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*(МГ|МКГ|МО|%|Г)(?:\/МЛ)?/g)){const v=_numKey(m[1].replace(",",".")),u=m[2];if(u==="Г")try{d.add(String(Math.round(parseFloat(v)*1000))+"МГ")}catch{d.add(v+"Г")}else d.add(v+u)}return d}
 function getVolumes(s){const u=s.toUpperCase().replace(/\u00a0/g," "),v=new Set();for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*МЛ/g))v.add(parseFloat(m[1].replace(",",".")));for(const m of u.matchAll(/(\d+(?:[.,]\d+)?)\s*Л[\s.,)]/g))v.add(parseFloat(m[1].replace(",","."))*1000);return v}
 // Конфлікт брендових суфіксів: "ЦЕФАЗОЛІН-ДАРНИЦЯ" vs "ЦЕФАЗОЛІН-БХФЗ" — різні виробники, НЕ матч.
 // Вмикається лише коли ОБИДВА токени мають дефісні частини і суфікси різні (стемінг + ігнорування
@@ -1257,6 +1260,18 @@ if(matched.length>1&&pt.length){
 }
 if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
 if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(tenders[i].commercial);return!tV.size||setsOverlap(pV,tV)});if(vf.length>0)matched=vf;else if(pV.size)matched=vf}
+// Перевага за ДРУГИМ брендовим токеном: "ЛОНГОКАЇН ХЕВІ" → угода з ХЕВІ, а звичайний
+// "ЛОНГОКАЇН" → угода без нього. Спрацьовує лише як звуження серед кількох кандидатів.
+if(matched.length>1){
+  const p1=pt.length>1?stemUk(pt[1]):null;
+  const pref=matched.filter(i=>{
+    const tb=getBrand(tenders[i].commercial);
+    const t1=tb.length>1?stemUk(tb[1]):null;
+    if(p1&&t1)return p1===t1||p1.startsWith(t1)||t1.startsWith(p1);
+    return !p1&&!t1;
+  });
+  if(pref.length&&pref.length<matched.length)matched=pref;
+}
 }
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
 let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,100),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
