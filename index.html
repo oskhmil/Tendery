@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 97;
+const APP_VERSION = 98;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -3996,7 +3996,10 @@ if(n===it.autoPacks){
   // (so when income grows after a delivery, we auto-reset)
   const f6n=(typeof resolveF6Name==="function")?resolveF6Name(it.drugName):null;
   const incomeAtSet=f6n?totalIncomeForDrug(f6n):0;
-  ordersQtyOverride[it.drugName]={packs:n,incomeAtSet,f6Name:f6n||null};
+  // Знімок ОБОХ джерел приходу: Форма 6 (мій склад) і Закуплено по моєму складу.
+  // Закуплено оновлюється частіше, тому без нього ручна кількість висіла до наступної Ф6.
+  const purchasedAtSet=purchasedForDrugMyWarehouse(it.drugName);
+  ordersQtyOverride[it.drugName]={packs:n,incomeAtSet,purchasedAtSet,f6Name:f6n||null,qv:2};
 }
 saveQtyOverride();render();
 }
@@ -4008,7 +4011,9 @@ saveQtyOverride();render();
 }
 // Auto-reset qty overrides when F6 shows income growth (delivery arrived → recalculate)
 function cleanupQtyOverridesByIncome(){
+  // Як і для позначок «очікується» (v90): не рахуємо, поки дані не завантажені повністю.
   if(!f6Months||!f6Months.length)return;
+  if(!purchasesByWH||!Object.keys(purchasesByWH).length||!allData||!allData.length)return;
   let changed=false;
   const removed=[];
   for(const drugName of Object.keys(ordersQtyOverride)){
@@ -4019,10 +4024,24 @@ function cleanupQtyOverridesByIncome(){
     // Always re-resolve via resolveF6Name — cached ov.f6Name may have been set by the
     // older (looser) resolver and point to a wrong F6 entry.
     const f6n=(typeof resolveF6Name==="function")?resolveF6Name(drugName):null;
-    if(!f6n)continue;
-    const currentIncome=totalIncomeForDrug(f6n);
-    if(currentIncome>ov.incomeAtSet){
-      removed.push(drugName+" (income "+ov.incomeAtSet+"→"+currentIncome+")");
+    const curP=purchasedForDrugMyWarehouse(drugName);
+    // Перебазація v2: старі записи не мають знімка Закуплено — проставляємо один раз,
+    // і лише якщо його вдалося порахувати (інакше пробуємо наступного разу).
+    if(ov.qv!==2){
+      if(curP!=null){ov.purchasedAtSet=curP;ov.qv=2;changed=true}
+      continue;
+    }
+    // Прихід видно ХОЧ В ОДНОМУ джерелі: Форма 6 або Закуплено по моєму складу.
+    let arrived=false,why="";
+    if(f6n){
+      const currentIncome=totalIncomeForDrug(f6n);
+      if(currentIncome>ov.incomeAtSet){arrived=true;why="Ф6 "+ov.incomeAtSet+"→"+currentIncome}
+    }
+    if(!arrived&&ov.purchasedAtSet!=null&&curP!=null&&curP>ov.purchasedAtSet){
+      arrived=true;why="Закуплено "+ov.purchasedAtSet+"→"+curP;
+    }
+    if(arrived){
+      removed.push(drugName+" ("+why+")");
       delete ordersQtyOverride[drugName];
       changed=true;
     }
