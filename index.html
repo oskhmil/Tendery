@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 98;
+const APP_VERSION = 99;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -3026,7 +3026,11 @@ for(const cName of contractNames){
     if(it.packsToOrder>it.packsAvailable){
       const over=it.packsToOrder-it.packsAvailable;
       h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:4px;font-size:11px;color:#fca5a5">⚠️ Перевищує залишок по угоді на ${over} ${esc(it.packUnit)} — потрібен новий тендер або розширення</div>`;
-    }else if(it.shortfall>0&&!it.overridden){
+    }else if(it.shortfall>0){
+      // Показуємо ЗАВЖДИ, навіть якщо кількість задана вручну: це попередження не про
+      // те, скільки замовляєш, а про те, що ємності угоди не вистачає на розраховану
+      // потребу. Раніше воно ховалось при будь-якій ручній правці — і зникало/з'являлось
+      // від зміни цифри на одиницю, бо значення, рівне автоматичному, скидає правку.
       h+=`<div style="margin-top:4px;padding:4px 8px;background:rgba(239,68,68,.1);border-left:3px solid var(--danger);border-radius:4px;font-size:11px;color:#fca5a5">⚠️ По угоді залишилось лише ${it.packsAvailable} ${esc(it.packUnit)}, потрібно ще ${it.shortfall} (потрібен новий тендер)</div>`;
     }
     if(hasAlts){
