@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 99;
+const APP_VERSION = 100;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1919,7 +1919,16 @@ const pms=allData.filter(d=>d.pq>0&&d.t.some(dt=>dt.s===a.supplier&&dt.c===a.con
 const pm=pms[0]||allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial)));
 let consDisp=null,remDisp=null,pctDisp=null,dispUnit=it.unit,consParts=null;
 if(pm){const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial));const pk=tc?tc.pk:1;
-const consRaw=pms.reduce((s,d)=>s+(d.pq||0),0);
+// Беремо споживання, ПРИПИСАНЕ саме цій тендерній позиції (waterfall у matchAll), а не
+// всю закупівлю рядка: інакше при двох договорах одного постачальника на ту саму позицію
+// обидва показували б повну кількість (кейс Дарниця ЛТМО-3 / ЛТМО-5).
+const consRaw=pms.reduce((s,d)=>{
+  const x=d.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial));
+  if(!x)return s;
+  // consumed заповнюється лише при каскадному розподілі між кількома угодами;
+  // якщо угода одна — беремо всю закупівлю рядка.
+  return s+(typeof x.consumed==="number"?x.consumed:(d.pq||0));
+},0);
 const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const cap=tc?tc.cq:it.qty*(pk>1?pk:1);const remRaw=cap-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;
 consDisp=consInTU;remDisp=remInTU;pctDisp=cap>0?Math.round(consRaw/cap*1000)/10:pm.pct;if(pk>1)dispUnit=it.unit;
 if(pms.length>1)consParts=pms.map(d=>`${d.n.slice(0,42)}: ${fmt(pk>1?Math.round(d.pq/pk*100)/100:d.pq)}`);}
@@ -4394,7 +4403,10 @@ function _tenderShare(d){
       for(const t of r.t){
         const k=t.s+"|"+(t.c||"")+"|"+cnKey(t.cn);
         if(!m.has(k))m.set(k,{q:0,rows:new Set()});
-        const e=m.get(k);e.q+=r.pq;e.rows.add(r.n);
+        const e=m.get(k);
+        // споживання саме цієї позиції, а не всієї закупівлі рядка
+        e.q+=(typeof t.consumed==="number"?t.consumed:r.pq);
+        if(typeof t.consumed!=="number"||t.consumed>0)e.rows.add(r.n);
       }
     }
     _shareCache={src:allData,map:m};
