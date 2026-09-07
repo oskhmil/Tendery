@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 100;
+const APP_VERSION = 101;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2667,10 +2667,17 @@ const ven=getVen(l.drugName,mnn);
 const abc=getAbc(l.drugName);
 const emlCandidate=!venCategories[l.drugName]&&mnnInWHO_EML(mnn); // auto-set hint only if no user override
 if(!bySupplierGroup[sup.name])bySupplierGroup[sup.name]={name:sup.name,items:[],total:0};
+// Договір для рядка замовлення — той, де ЩЕ Є вільна ємність. Раніше брався просто
+// перший за датою, тож коли старий договір вичерпувався, замовлення однаково значилось
+// під ним, хоча фактично товар піде з нового (кейс Метоклопрамід: ЛТМО-3 вибрано в нуль,
+// вільні 6 000 лишились на ЛТМО-5).
+const _freeT=sup.tenders.find(x=>((x.cq||0)-(typeof x.consumed==="number"?x.consumed:0))>0)||sup.tenders[0];
+const _multiC=sup.tenders.length>1?sup.tenders.map(x=>({c:x.c||"",free:Math.max(0,(x.cq||0)-(typeof x.consumed==="number"?x.consumed:0))})):null;
 bySupplierGroup[sup.name].items.push({
 drugName:l.drugName,
-commercial:sup.tenders[0].cn||l.drugName,
-contract:sup.tenders[0].c||"",
+commercial:_freeT.cn||l.drugName,
+contract:_freeT.c||"",
+contractsInfo:_multiC,
 mnn,
 f6Unit:l.f6Unit,stock:l.f6Stock,need:l.need,deficit:l.deficit,
 packUnit:sup.packUnit,pk,packsNeeded,packsAvailable,packsToOrder,shortfall,
@@ -3012,6 +3019,11 @@ for(const cName of contractNames){
     if(it.mnn)h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:4px">МНН: ${esc(it.mnn).slice(0,80)}</div>`;
     if(it.arrivedQty>0)h+=`<div style="font-size:11px;color:var(--accent);background:rgba(34,197,94,.12);border-radius:6px;padding:4px 8px;margin-bottom:4px">🚚 Надійшло: <strong>+${fmt(it.arrivedQty)} ${esc(it.arrivedUnit||"од")}</strong> з моменту додавання${it.arrivedSrc?` · <span style="color:var(--muted)">${esc(it.arrivedSrc)}</span>`:""} — перевір, можливо позицію можна прибрати</div>`;
     if(it.mergedFrom&&it.mergedFrom.length)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з: ${esc(it.mergedFrom.join("; ")).slice(0,160)}</div>`;
+    // Кілька договорів одного постачальника на ту саму позицію — показуємо, звідки береться
+    if(it.contractsInfo&&it.contractsInfo.length>1){
+      const parts=it.contractsInfo.map(x=>`${esc((x.c||"без угоди").replace(/^Договір\s*/i,""))}: ${x.free>0?fmt(Math.floor(x.free/(it.pk||1)))+" "+esc(it.packUnit):"вичерпано"}`);
+      h+=`<div style="font-size:10px;color:#93c5fd;margin-bottom:4px">📄 ${parts.join(" · ")}</div>`;
+    }
     if(it.manualPartial)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Ручна позиція: ${fmt(it.manualPartial.packs)} ${esc(it.manualPartial.unit)} − надійшло ${fmt(it.manualPartial.arrived)} ${esc(it.manualPartial.arrivedUnit||"")} → лишилось <strong>${fmt(it.manualPartial.left)} ${esc(it.manualPartial.unit)}</strong>${it.manualPartial.left===0?". Можна прибрати ручну частину.":""}</div>`;
     else if(it.manualMergedPacks!=null)h+=`<div style="font-size:10px;color:var(--violet);margin-bottom:4px">🔗 Об'єднано з ручною позицією (${fmt(it.manualMergedPacks)} ${esc(it.manualMergedUnit||"уп")}) — замовляємо більше з двох</div>`;
     h+=`<div class="row"><span>Залишок:</span><strong>${fmt(it.stock)} ${esc(it.f6Unit)}</strong></div>`;
