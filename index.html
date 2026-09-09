@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 101;
+const APP_VERSION = 102;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2660,19 +2660,22 @@ const overridden=(_ovRaw!=null);
 const _ovPacks=overridden?(typeof _ovRaw==="object"?(_ovRaw.packs|0):(_ovRaw|0)):0;
 const packsToOrder=overridden?Math.max(0,_ovPacks):autoPacks;
 const shortfall=packsNeeded>packsAvailable?packsNeeded-packsAvailable:0;
-const costEstimate=sup.pricePerPack!=null?packsToOrder*sup.pricePerPack:null;
-// VEN: auto from WHO EML, user override wins
-const mnn=(l.monitor.t&&l.monitor.t[0]&&l.monitor.t[0].mn)||"";
-const ven=getVen(l.drugName,mnn);
-const abc=getAbc(l.drugName);
-const emlCandidate=!venCategories[l.drugName]&&mnnInWHO_EML(mnn); // auto-set hint only if no user override
-if(!bySupplierGroup[sup.name])bySupplierGroup[sup.name]={name:sup.name,items:[],total:0};
 // Договір для рядка замовлення — той, де ЩЕ Є вільна ємність. Раніше брався просто
 // перший за датою, тож коли старий договір вичерпувався, замовлення однаково значилось
 // під ним, хоча фактично товар піде з нового (кейс Метоклопрамід: ЛТМО-3 вибрано в нуль,
 // вільні 6 000 лишились на ЛТМО-5).
 const _freeT=sup.tenders.find(x=>((x.cq||0)-(typeof x.consumed==="number"?x.consumed:0))>0)||sup.tenders[0];
 const _multiC=sup.tenders.length>1?sup.tenders.map(x=>({c:x.c||"",free:Math.max(0,(x.cq||0)-(typeof x.consumed==="number"?x.consumed:0))})):null;
+// Ціна — з ТОГО САМОГО договору, під яким іде замовлення (_freeT), а не з першого-ліпшого.
+// Інакше при вичерпаній старій угоді назва договору показувалась нова, а ціна тягнулась стара.
+const _pricePerPack=(_freeT&&_freeT.p!=null)?_freeT.p:sup.pricePerPack;
+const costEstimate=_pricePerPack!=null?packsToOrder*_pricePerPack:null;
+// VEN: auto from WHO EML, user override wins
+const mnn=(l.monitor.t&&l.monitor.t[0]&&l.monitor.t[0].mn)||"";
+const ven=getVen(l.drugName,mnn);
+const abc=getAbc(l.drugName);
+const emlCandidate=!venCategories[l.drugName]&&mnnInWHO_EML(mnn); // auto-set hint only if no user override
+if(!bySupplierGroup[sup.name])bySupplierGroup[sup.name]={name:sup.name,items:[],total:0};
 bySupplierGroup[sup.name].items.push({
 drugName:l.drugName,
 commercial:_freeT.cn||l.drugName,
@@ -2682,7 +2685,7 @@ mnn,
 f6Unit:l.f6Unit,stock:l.f6Stock,need:l.need,deficit:l.deficit,
 packUnit:sup.packUnit,pk,packsNeeded,packsAvailable,packsToOrder,shortfall,
 qtyInPurchaseUnits:packsToOrder*pk,
-pricePerPack:sup.pricePerPack,costEstimate,
+pricePerPack:_pricePerPack,costEstimate,
 altSuppliers:l.suppliers.filter(s=>s.name!==sup.name).map(s=>s.name),
 allSuppliers:l.suppliers.map(s=>s.name),
 ven,abc,emlCandidate,overridden,autoPacks,
