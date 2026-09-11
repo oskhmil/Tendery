@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 102;
+const APP_VERSION = 103;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1214,7 +1214,18 @@ function dosesOk(pD,tD){
 }
 
 // Ефективний розподіл: лист "Розподіл" з Excel + правки в застосунку (застосунок має пріоритет по препарату)
-function _effOverrides(){return Object.assign({},overrides,ordersAllocOverride)}
+// Ключ розподілу. 1С час від часу міняє назву косметично (подвійні пробіли, крапка
+// в кінці, регістр) — і раніше розподіл «відвалювався», бо шукався по точному рядку.
+// Нормалізований ключ переживає такі зміни.
+function _allocKey(n){return String(n==null?"":n).toLowerCase().replace(/[\s\u00a0]+/g," ").replace(/[.,;:\u2013\u2014-]+$/,"").trim()}
+function _effOverrides(){
+  const m=Object.assign({},overrides,ordersAllocOverride);
+  // Додаємо нормалізовані аліаси, не затираючи точні збіги
+  for(const k of Object.keys(m)){const nk=_allocKey(k);if(nk&&m[nk]===undefined)m[nk]=m[k];}
+  return m;
+}
+// Пошук розподілу: спершу точна назва, потім нормалізована
+function _ovGet(ov,name){const v=ov[name];if(v!==undefined&&v!==null)return v;const nv=ov[_allocKey(name)];return nv===undefined?null:nv}
 function rebuildMatches(){if(!parsedPurchases||!parsedPurchases.length)return;allData=matchAll(parsedPurchases,allTenders,_effOverrides(),ordersManualLink);_fimCache=new Map();render()}
 function matchAll(purchases,tenders,ov={},links={}){
 const results=[];
@@ -1283,7 +1294,7 @@ const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
 let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,200),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
 const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
 let tInfo=allTI;
-const ovEntry=isMulti?ov[p.name]:null;
+const ovEntry=isMulti?_ovGet(ov,p.name):null;
 if(isMulti&&ovEntry&&typeof ovEntry==="object"){
 }else if(isMulti&&typeof ovEntry==="string"){
 const first=allTI.filter(t=>t.s===ovEntry);
@@ -1388,7 +1399,7 @@ const me=cs?Math.max(1,Math.round((now-cs)/(1e3*60*60*24*30.44)*10)/10):3;
 const mr=p.qty>0?p.qty/me:0;const ml=tq>0?(mr>0?Math.round(rem/mr*10)/10:999):0;
 let du=p.unit,dpq=consumed,dtq=tq,drem=rem;
 if(tInfo.length&&tInfo[0].pk>1){const pk=tInfo[0].pk;du=tInfo[0].tu;dpq=Math.round(consumed/pk*100)/100;dtq=tInfo.reduce((s,t)=>s+t.tq,0);drem=Math.round(rem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(ov[p.name]||null):null,alloc:null});
+results.push({n:p.name,u:p.unit,du,pq:consumed,dpq,ps:p.sum,t:tInfo,tq,dtq,rem,drem,pct,ml,multi:isMulti?uSup:null,allM:isMulti?allTI:null,chosen:isMulti?(_ovGet(ov,p.name)||null):null,alloc:null});
 }
 }
 const used=new Set();results.forEach(r=>r.t.forEach(t=>{for(let i=0;i<tenders.length;i++)if(tenders[i].supplier===t.s&&tenders[i].contract===t.c&&norm(tenders[i].commercial).slice(0,40)===norm(t.cn).slice(0,40))used.add(i)}));
@@ -3796,7 +3807,7 @@ function buildAllocDialog(){
   const d=allData.find(r=>r.n===allocDialogFor&&r.multi);
   if(!d)return "";
   const total=d.realQty!=null?d.realQty:d.pq;
-  const cur=ordersAllocOverride[d.n]||d.alloc||{};
+  const cur=_ovGet(ordersAllocOverride,d.n)||d.alloc||{};
   window._allocDlgRow=d;
   let h="";
   h+='<div onclick="closeAllocDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:110;display:flex;align-items:center;justify-content:center;padding:8px">';
@@ -4438,7 +4449,11 @@ function _tenderShare(d){
 function renderConflicts(el){
 const conflicts=allData.filter(d=>d.multi&&!d.alloc);
 // Позиції, розподілені в застосунку (можна скинути і перерозподілити)
-const appAllocated=Object.keys(ordersAllocOverride).filter(n=>allData.some(d=>d.n===n));
+const appAllocated=Object.keys(ordersAllocOverride).filter(n=>allData.some(d=>_allocKey(d.n)===_allocKey(n)));
+// «Осиротілі» розподіли: назву в 1С змінили настільки, що збігу нема зовсім.
+// Раніше вони мовчки зникали з очей, а препарат повертався в конфлікти —
+// виглядало як «розподіл злетів». Тепер показуємо їх явно.
+const appOrphans=Object.keys(ordersAllocOverride).filter(n=>!allData.some(d=>_allocKey(d.n)===_allocKey(n)));
 let doneH="";
 if(appAllocated.length){
   window._allocDoneList=appAllocated;
@@ -4450,12 +4465,22 @@ if(appAllocated.length){
   });
   doneH+='</div>';
 }
+if(appOrphans.length){
+  window._allocOrphanList=appOrphans;
+  doneH+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:#fbbf24;margin-bottom:6px">⚠️ Розподіл є, але назву не знайдено у Закупленому</div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">Найімовірніше препарат перейменували в 1С. Прив\'яжи розподіл до нової назви — перерозносити не треба.</div>';
+  appOrphans.forEach((n,i)=>{
+    const a=ordersAllocOverride[n];
+    const parts=Object.entries(a||{}).map(([s,q])=>`${esc(s)}: ${fmt(q)}`).join(" · ");
+    doneH+=`<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(251,191,36,.08);border-radius:8px;margin-bottom:4px"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</div><div style="font-size:10px;color:var(--muted)">${parts}</div></div><button class="sort-btn" style="font-size:10px;color:var(--accent);flex-shrink:0" onclick="rebindAllocUI(${i})">↪ Прив'язати</button><button class="sort-btn" style="font-size:10px;color:var(--danger);flex-shrink:0" onclick="dropAllocUI(${i})">✕</button></div>`;
+  });
+  doneH+='</div>';
+}
 if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
 let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Вкажи нижче, скільки закупленого повісити на кожного, і натисни <strong>Застосувати</strong> (або внеси в лист "Розподіл" файлу тендерів на Drive).</div>';
 window._conflictCards=conflicts;
 conflicts.forEach((d,ci)=>{
 h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
-const cur=ordersAllocOverride[d.n]||{};
+const cur=_ovGet(ordersAllocOverride,d.n)||{};
 d.multi.forEach((sup,si)=>{
 const supItems=d.allM.filter(t=>t.s===sup);
 const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
@@ -4467,11 +4492,39 @@ h+=`</div>`;
 });
 el.innerHTML=h+doneH;
 }
+// Перенести існуючий розподіл на іншу (перейменовану) позицію без повторного рознесення
+function rebindAllocUI(i){
+  const oldN=(window._allocOrphanList||[])[i];if(!oldN)return;
+  const alloc=ordersAllocOverride[oldN];if(!alloc)return;
+  const sups=Object.keys(alloc);
+  // Кандидати — конфліктні позиції, де є ТІ САМІ постачальники
+  const cands=allData.filter(d=>d.multi&&!d.alloc&&sups.every(s=>d.multi.includes(s)));
+  const pool=cands.length?cands:allData.filter(d=>d.multi&&!d.alloc);
+  if(!pool.length){alert("Нема куди прив'язати: немає нерозподілених позицій з такими постачальниками.");return}
+  const list=pool.slice(0,30).map((d,k)=>`${k+1}. ${d.n}`).join("\n");
+  const ans=prompt("Розподіл: "+Object.entries(alloc).map(([s,q])=>s+": "+q).join(" · ")+"\n\nДо якої позиції прив'язати? Введи номер:\n\n"+list);
+  if(ans==null)return;
+  const idx=parseInt(ans,10)-1;
+  const target=pool[idx];
+  if(!target){alert("Невірний номер.");return}
+  delete ordersAllocOverride[oldN];
+  ordersAllocOverride[target.n]=alloc;
+  saveAllocOverride();
+  rebuildMatches();
+}
+function dropAllocUI(i){
+  const n=(window._allocOrphanList||[])[i];if(!n)return;
+  if(!confirm("Видалити збережений розподіл для:\n"+n+"?"))return;
+  delete ordersAllocOverride[n];
+  saveAllocOverride();
+  rebuildMatches();
+}
 // Скидання розподілу, заданого в застосунку (позиція повернеться в конфлікти для перерозподілу)
 function resetAllocUI(i){
   const n=(window._allocDoneList||[])[i];if(!n)return;
   if(!confirm("Скинути розподіл для:\n"+n+"?"))return;
   delete ordersAllocOverride[n];
+  for(const k of Object.keys(ordersAllocOverride))if(_allocKey(k)===_allocKey(n))delete ordersAllocOverride[k];
   saveAllocOverride();
   rebuildMatches();
 }
