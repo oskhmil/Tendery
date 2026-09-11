@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 106;
+const APP_VERSION = 107;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -4482,6 +4482,7 @@ const statusH='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wra
  +`<span style="font-size:12px;color:var(--muted)">У застосунку збережено розподілів: <strong style="color:${_allocCnt?"var(--accent)":"var(--danger)"}">${_allocCnt}</strong> · з листа «Розподіл»: <strong>${_xlsCnt}</strong></span>`
  +'<button class="sort-btn" style="font-size:11px;margin-left:auto" onclick="dumpAllocUI()">📋 Показати</button>'
  +'<button class="sort-btn" style="font-size:11px" onclick="exportAllocUI()">📤 Для листа «Розподіл»</button>'
+ +'<button class="sort-btn" style="font-size:11px;color:#fbbf24" onclick="dupNomUI()">🔎 Дублі номенклатури 1С</button>'
  +'</div><div id="alloc-dump" style="display:none"></div>';
 if(!conflicts.length){el.innerHTML=statusH+'<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
 // Швидке рознесення: якщо від постачальника поставок ще не було, весь обсяг
@@ -4540,6 +4541,48 @@ function allocCardAllTo(ci,si){
   saveAllocOverride();
   rebuildMatches();
 }
+// ── Пошук дублів номенклатури 1С ──
+// Одна тендерна позиція, у яку впирається кілька різних назв із Закупленого.
+// Майже завжди це означає, що на складі завели другу картку на той самий препарат.
+function dupNomUI(){
+  const m=new Map();
+  for(const r of allData){
+    if(!r.pq||!r.t)continue;
+    for(const t of r.t){
+      const k=t.s+"|"+(t.c||"")+"|"+cnKey(t.cn);
+      if(!m.has(k))m.set(k,{s:t.s,c:t.c||"",cn:t.cn,u:r.du||r.u,names:new Map()});
+      const e=m.get(k);
+      const q=(typeof t.consumed==="number"?t.consumed:r.pq);
+      e.names.set(r.n,(e.names.get(r.n)||0)+q);
+    }
+  }
+  const dups=[...m.values()].filter(e=>e.names.size>1)
+    .sort((a,b)=>b.names.size-a.names.size||a.cn.localeCompare(b.cn));
+  // склади, де зустрічається кожна назва
+  const whOf=n=>{const out=[];for(const[w,map]of Object.entries(purchasesByWH||{}))if(map&&map[n])out.push(w);return out};
+  let h='<div style="padding:10px;background:rgba(0,0,0,.35);border-radius:10px;margin-bottom:10px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong style="font-size:12px">🔎 Дублі номенклатури 1С</strong><button class="sort-btn" style="font-size:11px;margin-left:auto" onclick="copyDupNom()">Копіювати</button><button class="sort-btn" style="font-size:11px" onclick="closeAllocDump()">Закрити</button></div>';
+  h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Знайдено ${dups.length} тендерних позицій, у які зводяться дві або більше різних назв із Закупленого. Перевір, чи це справді один препарат — якщо так, на складі треба прибрати зайву картку.</div>`;
+  if(!dups.length)h+='<div style="font-size:12px;color:var(--accent)">Дублів немає.</div>';
+  const lines=[];
+  for(const e of dups){
+    h+=`<div style="padding:6px 8px;border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);margin-bottom:5px;border-radius:0 6px 6px 0">`;
+    h+=`<div style="font-size:11px;font-weight:600">${esc(e.s)} · ${esc(e.c.replace(/^Договір\s*/i,""))}</div>`;
+    h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:3px">${esc(String(e.cn).slice(0,80))}</div>`;
+    lines.push(e.s+" · "+e.c+" · "+e.cn);
+    for(const[n,q]of [...e.names.entries()].sort((a,b)=>b[1]-a[1])){
+      const wh=whOf(n);
+      h+=`<div style="font-size:11px;padding:1px 0"><span style="color:var(--accent)">${fmt(q)}</span> · ${esc(n)}${wh.length?`<span style="color:var(--muted);font-size:10px"> — ${esc(wh.map(w=>w.replace(/\(.*/,"").trim()).join(", ").slice(0,90))}</span>`:""}</div>`;
+      lines.push("   "+q+"\t"+n+"\t"+wh.join("; "));
+    }
+    h+='</div>';
+  }
+  h+='</div>';
+  window._dupNomTxt=lines.join("\n");
+  const el=document.getElementById("alloc-dump");
+  if(el){el.innerHTML=h;el.style.display="block";el.scrollIntoView({block:"nearest"})}
+}
+function copyDupNom(){const t=window._dupNomTxt||"";try{navigator.clipboard.writeText(t);alert("Скопійовано")}catch(e){prompt("Скопіюй:",t)}}
 // Діагностика: що РЕАЛЬНО лежить у сховищі розподілу
 function dumpAllocUI(){
   const a=ordersAllocOverride||{},ov=overrides||{};
