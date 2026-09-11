@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 105;
+const APP_VERSION = 106;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -4484,7 +4484,22 @@ const statusH='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wra
  +'<button class="sort-btn" style="font-size:11px" onclick="exportAllocUI()">📤 Для листа «Розподіл»</button>'
  +'</div><div id="alloc-dump" style="display:none"></div>';
 if(!conflicts.length){el.innerHTML=statusH+'<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
-let h=statusH+'<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Вкажи нижче, скільки закупленого повісити на кожного, і натисни <strong>Застосувати</strong> (або внеси в лист "Розподіл" файлу тендерів на Drive).</div>';
+// Швидке рознесення: якщо від постачальника поставок ще не було, весь обсяг
+// вішається на іншого одним натиском замість ручного заповнення кожної картки.
+const _supCnt={};
+conflicts.forEach(d=>d.multi.forEach(sp=>{_supCnt[sp]=(_supCnt[sp]||0)+1}));
+const _supList=Object.entries(_supCnt).sort((a,b)=>b[1]-a[1]);
+window._bulkSupList=_supList.map(x=>x[0]);
+let bulkH='';
+if(conflicts.length>1&&_supList.length){
+  bulkH='<div style="padding:8px 12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:10px;margin-bottom:10px">'
+   +'<div style="font-size:12px;font-weight:600;margin-bottom:6px">⚡ Рознести все одразу</div>'
+   +'<div style="font-size:11px;color:var(--muted);margin-bottom:7px">Весь закуплений обсяг піде на вибраного постачальника, решті — 0. Зручно, коли від другого постачальника поставок ще не було.</div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+   +_supList.map((x,i)=>`<button class="sort-btn" style="font-size:11px;color:var(--accent);border-color:rgba(34,197,94,.4)" onclick="allocAllTo(${i})">Усе на «${esc(x[0])}» (${x[1]})</button>`).join("")
+   +'</div></div>';
+}
+let h=statusH+bulkH+'<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Вкажи нижче, скільки закупленого повісити на кожного, і натисни <strong>Застосувати</strong> (або внеси в лист "Розподіл" файлу тендерів на Drive).</div>';
 window._conflictCards=conflicts;
 conflicts.forEach((d,ci)=>{
 h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
@@ -4493,12 +4508,37 @@ d.multi.forEach((sup,si)=>{
 const supItems=d.allM.filter(t=>t.s===sup);
 const maxQty=supItems.reduce((s,t)=>s+t.cq,0);
 const val=cur[sup]!=null?cur[sup]:"";
-h+=`<div class="alloc-row"><div style="flex:1;min-width:0"><div class="sup-name">${esc(sup)}</div><div class="alloc-cap">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,70)} · В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><input type="number" min="0" class="alloc-input" id="alloc-in-${ci}-${si}" value="${val}" placeholder="0"></div>`;
+h+=`<div class="alloc-row"><div style="flex:1;min-width:0"><div class="sup-name">${esc(sup)}</div><div class="alloc-cap">${supItems.map(t=>esc(t.cn)).join("; ").slice(0,70)} · В угоді: ${fmt(maxQty)} ${esc(d.u)}</div></div><button class="sort-btn" style="font-size:10px;flex-shrink:0" title="Весь закуплений обсяг на цього постачальника" onclick="allocCardAllTo(${ci},${si})">все сюди</button><input type="number" min="0" class="alloc-input" id="alloc-in-${ci}-${si}" value="${val}" placeholder="0"></div>`;
 });
 h+=`<button class="alloc-apply" onclick="applyAllocUI(${ci})">✓ Застосувати</button>`;
 h+=`</div>`;
 });
 el.innerHTML=h+doneH;
+}
+// Весь закуплений обсяг на одного постачальника — для всіх конфліктних позицій,
+// де цей постачальник присутній. Іншим ставимо явний 0 (як у листі «Розподіл»).
+function allocAllTo(i){
+  const sup=(window._bulkSupList||[])[i];if(!sup)return;
+  const targets=allData.filter(d=>d.multi&&!d.alloc&&d.multi.includes(sup));
+  if(!targets.length){alert("Нема підходящих позицій.");return}
+  if(!confirm(`Повісити весь закуплений обсяг на «${sup}» для ${targets.length} позицій?\nІншим постачальникам буде виставлено 0.`))return;
+  for(const d of targets){
+    const a={};a[sup]=d.pq;
+    for(const s of d.multi)if(s!==sup)a[s]=0;
+    ordersAllocOverride[d.n]=a;
+  }
+  saveAllocOverride();
+  rebuildMatches();
+}
+// Те саме, але для однієї картки
+function allocCardAllTo(ci,si){
+  const d=(window._conflictCards||[])[ci];if(!d)return;
+  const sup=d.multi[si];if(!sup)return;
+  const a={};a[sup]=d.pq;
+  for(const s of d.multi)if(s!==sup)a[s]=0;
+  ordersAllocOverride[d.n]=a;
+  saveAllocOverride();
+  rebuildMatches();
 }
 // Діагностика: що РЕАЛЬНО лежить у сховищі розподілу
 function dumpAllocUI(){
