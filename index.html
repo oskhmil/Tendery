@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 103;
+const APP_VERSION = 104;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -4475,8 +4475,16 @@ if(appOrphans.length){
   });
   doneH+='</div>';
 }
-if(!conflicts.length){el.innerHTML='<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
-let h='<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Вкажи нижче, скільки закупленого повісити на кожного, і натисни <strong>Застосувати</strong> (або внеси в лист "Розподіл" файлу тендерів на Drive).</div>';
+// ── Статус сховища розподілу: скільки записів реально збережено ──
+const _allocCnt=Object.keys(ordersAllocOverride||{}).length;
+const _xlsCnt=Object.keys(overrides||{}).length;
+const statusH='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:rgba(255,255,255,.05);border-radius:10px;margin-bottom:10px">'
+ +`<span style="font-size:12px;color:var(--muted)">У застосунку збережено розподілів: <strong style="color:${_allocCnt?"var(--accent)":"var(--danger)"}">${_allocCnt}</strong> · з листа «Розподіл»: <strong>${_xlsCnt}</strong></span>`
+ +'<button class="sort-btn" style="font-size:11px;margin-left:auto" onclick="dumpAllocUI()">📋 Показати</button>'
+ +'<button class="sort-btn" style="font-size:11px" onclick="exportAllocUI()">📤 Для листа «Розподіл»</button>'
+ +'</div>';
+if(!conflicts.length){el.innerHTML=statusH+'<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
+let h=statusH+'<div class="conflict-banner">⚡ Ці препарати є у кількох постачальників. Вкажи нижче, скільки закупленого повісити на кожного, і натисни <strong>Застосувати</strong> (або внеси в лист "Розподіл" файлу тендерів на Drive).</div>';
 window._conflictCards=conflicts;
 conflicts.forEach((d,ci)=>{
 h+=`<div class="conflict-card"><div class="conflict-drug">${esc(d.n)}</div><div class="conflict-meta">Закуплено: ${fmt(d.pq)} ${esc(d.u)}</div>`;
@@ -4491,6 +4499,26 @@ h+=`<button class="alloc-apply" onclick="applyAllocUI(${ci})">✓ Застосу
 h+=`</div>`;
 });
 el.innerHTML=h+doneH;
+}
+// Діагностика: що РЕАЛЬНО лежить у сховищі розподілу
+function dumpAllocUI(){
+  const a=ordersAllocOverride||{},keys=Object.keys(a);
+  let raw="";try{raw=localStorage.getItem(USER_KEY+"_allocov")||"(ключ порожній)"}catch(e){raw="(немає доступу до localStorage)"}
+  const txt="У пам'яті застосунку: "+keys.length+" позицій\n"
+    +"Ключ localStorage: "+USER_KEY+"_allocov\n\n"
+    +(keys.length?keys.map(k=>"• "+k+"\n   "+Object.entries(a[k]||{}).map(([s,q])=>s+": "+q).join(" · ")).join("\n"):"(порожньо)")
+    +"\n\n── сирий вміст ключа ──\n"+raw;
+  prompt("Стан розподілу (Ctrl+C щоб скопіювати):",txt);
+}
+// Експорт у формат листа «Розподіл» — вставляється в Excel на Drive як є
+function exportAllocUI(){
+  const rows=[["Назва","Постачальник","Кількість"]];
+  for(const[n,a]of Object.entries(ordersAllocOverride||{}))for(const[s,q]of Object.entries(a||{}))rows.push([n,s,q]);
+  for(const[n,a]of Object.entries(overrides||{}))if(!ordersAllocOverride[n]&&typeof a==="object")for(const[s,q]of Object.entries(a||{}))rows.push([n,s,q]);
+  if(rows.length<2){alert("Нема чого експортувати — розподілів не збережено.");return}
+  const tsv=rows.map(r=>r.join("\t")).join("\n");
+  try{navigator.clipboard.writeText(tsv);alert("Скопійовано "+(rows.length-1)+" рядків. Встав у лист «Розподіл» файлу Тендери_2026 на Drive, починаючи з A1.")}
+  catch(e){prompt("Скопіюй і встав у лист «Розподіл» (з A1):",tsv)}
 }
 // Перенести існуючий розподіл на іншу (перейменовану) позицію без повторного рознесення
 function rebindAllocUI(i){
