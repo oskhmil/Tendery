@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 107;
+const APP_VERSION = 111;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -298,6 +298,30 @@ let currentFilter="all", currentSort="status";
 let expandedCard=null, expandedAgr=null;
 let purchasesRaw=null, tendersRaw=null;
 let parsedPurchases=null;
+let purchaseLots={};        // {drugName: [{doc,ts,num,cdate,pid,qty,sum,wh}]} — партії з номером угоди (1С)
+// Перемикач прив'язки по партіях. Вимикається через консоль: lotMatch(false) — тоді
+// матчер повертається до старого каскаду по датах договорів, для звірки цифр.
+let LOT_MATCH_ON=(function(){try{return localStorage.getItem("tendertrack_lotmatch")!=="0"}catch(e){return true}})();
+function lotMatch(on){try{localStorage.setItem("tendertrack_lotmatch",on?"1":"0")}catch(e){}LOT_MATCH_ON=!!on;if(typeof rebuildMatches==="function")rebuildMatches();return LOT_MATCH_ON}
+// Скільки спожито по кожному договору за фактом накладних.
+// Повертає Map(тендер → кількість) або null, якщо партій нема чи вони покривають
+// не весь обсяг закупівлі — часткову картину не використовуємо, щоб не змішувати
+// факт із каскадом і не отримати цифри, яких не пояснити.
+function lotConsumption(p,tenders){
+  if(!LOT_MATCH_ON)return null;
+  const lots=purchaseLots[p.name];
+  if(!lots||!lots.length||!tenders||!tenders.length)return null;
+  const m=new Map();let matched=0;
+  for(const l of lots){
+    const t=lotTender(l,tenders);
+    if(!t)continue;
+    m.set(t,(m.get(t)||0)+(l.qty||0));
+    matched+=l.qty||0;
+  }
+  if(!m.size)return null;
+  if(matched<p.qty*0.995)return null;
+  return m;
+}
 let purchasesByWH={};       // {warehouseName: {drugName: qty}} — per-warehouse purchased qty for pending scoping
 let purchasesMonthly={};    // {drugName: {"YYYY-MM": money}} — spend per month from document rows (накладні)
 // Ostap's own warehouse — pending marks auto-clear only on arrivals here (substring match, lowercased).
@@ -861,7 +885,7 @@ render();
 
 // ═══════ CACHE ═══════
 function saveCache(){
-const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,purchasesLastBuy:purchasesLastBuy,purchasesMonthly:purchasesMonthly,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
+const payload={data:allData,tenders:allTenders,purchases:parsedPurchases,purchasesByWH:purchasesByWH,purchasesLastBuy:purchasesLastBuy,purchasesMonthly:purchasesMonthly,purchaseLots:purchaseLots,f6:f6Months,f6ts:f6LastUpdated?f6LastUpdated.getTime():null,ts:Date.now()};
 try{localStorage.setItem(CACHE_KEY,JSON.stringify(payload))}catch(e){
 console.warn("Cache full, saving without purchases",e);
 try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:allData,tenders:allTenders,f6:f6Months,f6ts:payload.f6ts,ts:Date.now()}))}catch{}
@@ -900,23 +924,60 @@ const wb=XLSX.read(buf,{type:"array"});
 const ws=wb.Sheets[wb.SheetNames[0]];
 const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
 if(rows.length<12)throw new Error("Файл закупівель: занадто мало рядків ("+rows.length+"). Очікується вивантаження з 1С.");
+// ── Розкладка колонок визначається по заголовку, а не по фіксованих індексах.
+// Звіт у 1С перенастроюють (додають договір, ідентифікатор закупівлі), і колонки
+// їдуть. Раніше це тихо ламало парсер — тепер знаходимо їх за назвами.
+const norm=v=>String(v==null?"":v).replace(/\u00a0/g," ").trim().toLowerCase();
+let COL=null;
+for(let i=0;i<Math.min(rows.length,14);i++){
+  const r=rows[i];if(!r)continue;
+  const find=re=>{for(let c=0;c<r.length;c++)if(re.test(norm(r[c])))return c;return -1};
+  const q=find(/^кількість$/),sm=find(/^сума$/),un=find(/^од\.?\s*вим/),se=find(/^серія$/);
+  if(q>0&&sm>0&&un>0){COL={qty:q,sum:sm,unit:un,ser:se>0?se:null};break}
+}
+if(!COL)COL={qty:6,sum:7,unit:5,ser:3};   // стара розкладка як запасна
+// Колонки між назвою і серією — реквізити договору (номер / дата / ідентифікатор).
+// Що саме де — визначаємо по вигляду значення, бо заголовків у них немає.
+const metaMax=(COL.ser!=null?COL.ser:COL.unit);
 let hasNumericQty=false;
-for(let i=10;i<Math.min(rows.length,20);i++){const r=rows[i];if(r&&typeof r[6]==="number")hasNumericQty=true;}
-if(!hasNumericQty)throw new Error("Файл закупівель: не знайдено числових даних у колонці G (кількість). Можливо формат файлу змінився.");
+for(let i=10;i<Math.min(rows.length,40);i++){const r=rows[i];if(r&&typeof r[COL.qty]==="number")hasNumericQty=true;}
+if(!hasNumericQty)throw new Error("Файл закупівель: не знайдено числових даних у колонці кількості. Можливо формат файлу змінився.");
 const drugs={};
-purchasesByWH={};purchasesLastBuy={};
+purchasesByWH={};purchasesLastBuy={};purchaseLots={};
 purchasesMonthly={};
 let currentWH=null,curMonthlyDrug=null;
-const reDocDate=/від\s+(\d{2})\.(\d{2})\.(\d{4})/;
+const reDocDate=/від\s+(\d{1,2})\.(\d{1,2})\.(\d{4})/;
+const rePid=/^UA-\d{4}-\d{2}-\d{2}-\d+/i;
+const reDate=/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+function readMeta(r){
+  const out={num:null,cdate:null,pid:null};
+  for(let c=1;c<metaMax;c++){
+    const v=r[c];if(v==null||v==="")continue;
+    if(v instanceof Date){out.cdate=("0"+v.getDate()).slice(-2)+"."+("0"+(v.getMonth()+1)).slice(-2)+"."+v.getFullYear();continue}
+    const sv=String(v).trim();
+    if(rePid.test(sv)){out.pid=sv;continue}
+    if(reDate.test(sv)){out.cdate=sv;continue}
+    if(out.num==null)out.num=sv;
+  }
+  return out;
+}
 for(let i=10;i<rows.length;i++){
 const r=rows[i];if(!r||!r[0])continue;
-const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=r[3],f=r[5],g=r[6],h=r[7];
+const a=fixKnownDoses(String(r[0]).trim().replace(/\s+/g,' ')),d=COL.ser!=null?r[COL.ser]:null,f=r[COL.unit],g=r[COL.qty],h=r[COL.sum];
 if(a.startsWith("Надходження")){ // document row under current drug: attribute money to its month
   const m=a.match(reDocDate);
-  if(m&&typeof h==="number"&&curMonthlyDrug){const key=m[3]+"-"+m[2];if(!purchasesMonthly[curMonthlyDrug])purchasesMonthly[curMonthlyDrug]={};purchasesMonthly[curMonthlyDrug][key]=(purchasesMonthly[curMonthlyDrug][key]||0)+h;}
+  if(m&&typeof h==="number"&&curMonthlyDrug){const key=m[3]+"-"+("0"+m[2]).slice(-2);if(!purchasesMonthly[curMonthlyDrug])purchasesMonthly[curMonthlyDrug]={};purchasesMonthly[curMonthlyDrug][key]=(purchasesMonthly[curMonthlyDrug][key]||0)+h;}
   // Дата останнього надходження по препарату — нею датуємо момент, коли угода добралась
   // до 100% (останнє надходження її й закрило). Використовується для сортування «Свіжі».
-  if(m&&curMonthlyDrug){const ts=Date.UTC(+m[3],+m[2]-1,+m[1]);if(!(purchasesLastBuy[curMonthlyDrug]>=ts))purchasesLastBuy[curMonthlyDrug]=ts;}
+  const ts=m?Date.UTC(+m[3],+m[2]-1,+m[1]):null;
+  if(ts!=null&&curMonthlyDrug){if(!(purchasesLastBuy[curMonthlyDrug]>=ts))purchasesLastBuy[curMonthlyDrug]=ts;}
+  // Партія: кількість і сума цього приходу разом з реквізитами угоди
+  if(curMonthlyDrug&&typeof g==="number"){
+    const meta=readMeta(r);
+    if(!purchaseLots[curMonthlyDrug])purchaseLots[curMonthlyDrug]=[];
+    purchaseLots[curMonthlyDrug].push({doc:a,ts:ts,num:meta.num,cdate:meta.cdate,pid:meta.pid,
+      qty:g,sum:typeof h==="number"?h:null,wh:currentWH||null});
+  }
   continue;
 }
 if(!d&&!f){ if(String(a).toLowerCase().includes("склад"))currentWH=a; curMonthlyDrug=null; continue; } // grouping header; track warehouse
@@ -945,7 +1006,10 @@ if(sn==="Розподіл")continue;
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});let contract=null;
 for(const r of rows){if(!r)continue;
 const[a,b,c,d,eR,fv,gv]=[r[0],r[1],r[2],r[3],r[4],r[5],r[6]];
-if(typeof a==="string"&&(a.includes("Договір")||a.includes("Договору"))){contract=a.trim();sheetsWithContract++;continue}
+// Заголовок договору розпізнаємо по корені «догов» — у листі трапляються описки
+// («Договів № 555»), а раніше такий рядок просто не спрацьовував, і його позиції
+// мовчки лишались за попереднім договором.
+if(typeof a==="string"&&/догов/i.test(a)){contract=a.trim();sheetsWithContract++;continue}
 if(!b)continue;const bs=String(b).trim();
 if(bs.includes("Найменування")||bs.includes("Міжнародна")||bs.includes("Загальна")||bs.includes("ПДВ"))continue;
 const e=parseQty(eR);if(e==null||e<=0||!c)continue;
@@ -1293,6 +1357,9 @@ if(matched.length>1){
 const pu=p.unit.toLowerCase().trim().replace(/\.+$/,"");
 let allTI=matched.map(i=>{const t=tenders[i];let tu=(t.unit||"").toLowerCase().trim().replace(/\.+$/,""),tuC=tu;const inn=tu.match(/\((\w+)\)/);if(inn)tuC=inn[1];let cq=t.qty,pk=1;if(SINGLE_U.has(pu)&&PACK_U.has(tuC)&&!T_SINGLE.has(tuC)){const pkP=extractPk(p.name),pkT=extractPk(t.commercial);if(pkP>1)pk=pkP;else if(pkT>1)pk=pkT;if(pk>1000)pk=1;if(pk>1)cq=t.qty*pk}return{s:t.supplier,c:t.contract,cn:t.commercial.slice(0,200),mn:t.mnn.slice(0,100),tu:t.unit,tq:t.qty,cq,pk,p:t.price}});
 const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
+// Фактичний розподіл спожитого по договорах — з партій 1С (номер угоди в накладній).
+// Замінює каскад «заповнюємо старіший договір першим», який був лише припущенням.
+const factual=lotConsumption(p,allTI);
 let tInfo=allTI;
 const ovEntry=isMulti?_ovGet(ov,p.name):null;
 if(isMulti&&ovEntry&&typeof ovEntry==="object"){
@@ -1305,6 +1372,10 @@ tInfo=[...first,...rest];
 let consumed=p.qty;
 if(isMulti&&ovEntry&&typeof ovEntry==="object"){
 tInfo=allTI;
+}else if(factual){
+// Факт із накладних: кожна партія віднесена до свого договору, без здогадок.
+tInfo=allTI.map(t=>Object.assign({},t,{consumed:Math.min(factual.get(t)||0,t.cq),byLots:true}));
+consumed=tInfo.reduce((s2,t)=>s2+t.consumed,0);
 }else if(tInfo.length>1){
 if(!isMulti||!ovEntry)tInfo.sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return da[0]-db[0]||da[1]-db[1]||da[2]-db[2]});
 let left=p.qty;const active=[];const activeConsumed=[];
@@ -1663,8 +1734,12 @@ const isOrders=(currentView==="orders");
 const isPurchases=(!isConsumption&&!isOrders);
 // Угоди/Конфлікти — тільки для Закупівель
 document.getElementById("btn-agreements").classList.toggle("hidden",!isPurchases);
-cBtn.classList.toggle("hidden",!isPurchases||mc===0);
-document.getElementById("conflict-count").textContent=mc;
+// Вкладка лишається доступною і без конфліктів: там живуть діагностика розподілу
+// та пошук дублів номенклатури, які потрібні саме тоді, коли все вже рознесено.
+cBtn.classList.toggle("hidden",!isPurchases);
+cBtn.classList.toggle("amber",mc>0);
+document.getElementById("conflict-count").textContent=mc>0?mc:"✓";
+cBtn.title=mc>0?("Нерозподілених позицій: "+mc):"Розподіл і діагностика";
 // ☁️/📂 Закупівель — тільки на вкладках Закупівель
 document.getElementById("btn-refresh").classList.toggle("hidden",!isPurchases);
 document.getElementById("btn-upload").classList.toggle("hidden",!isPurchases);
@@ -1883,7 +1958,7 @@ d.t.forEach(t=>{
     let cDisp=tCons,rDisp=tRem,unitDisp=d.u;
     if(t.pk>1){cDisp=Math.round(tCons/t.pk*100)/100;rDisp=Math.round(tRem/t.pk*100)/100;unitDisp=t.tu}
     const remColor=tRem<=0?"var(--danger)":"var(--green)";
-    h+=`<div class="row"><span>Вибрано:</span><span>${fmt(cDisp)} ${esc(unitDisp)} (${tPct}%)</span></div>`;
+    h+=`<div class="row"><span>Вибрано:${t.byLots?` <span style="color:var(--accent);font-size:10px" title="Пораховано за номерами договорів у накладних 1С">за накладними</span>`:""}</span><span>${fmt(cDisp)} ${esc(unitDisp)} (${tPct}%)</span></div>`;
     h+=`<div class="row"><span>Залишок:</span><span style="color:${remColor};font-weight:600">${fmt(rDisp)} ${esc(unitDisp)}</span></div>`;
   }
   if(t.p!=null)h+=`<div class="row"><span>Ціна:</span><span>${fmt(t.p)} грн</span></div>`;
@@ -4483,6 +4558,8 @@ const statusH='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wra
  +'<button class="sort-btn" style="font-size:11px;margin-left:auto" onclick="dumpAllocUI()">📋 Показати</button>'
  +'<button class="sort-btn" style="font-size:11px" onclick="exportAllocUI()">📤 Для листа «Розподіл»</button>'
  +'<button class="sort-btn" style="font-size:11px;color:#fbbf24" onclick="dupNomUI()">🔎 Дублі номенклатури 1С</button>'
+ +'<button class="sort-btn" style="font-size:11px;color:#93c5fd" onclick="lotLinkUI()">🔗 Прив\'язка партій до угод</button>'
+ +`<button class="sort-btn" style="font-size:11px;color:${LOT_MATCH_ON?"var(--accent)":"var(--muted)"}" title="Розподіл спожитого по договорах: за накладними 1С або старим каскадом по датах" onclick="lotMatch(${LOT_MATCH_ON?"false":"true"})">${LOT_MATCH_ON?"✅ по накладних":"⚪ старий каскад"}</button>`
  +'</div><div id="alloc-dump" style="display:none"></div>';
 if(!conflicts.length){el.innerHTML=statusH+'<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
 // Швидке рознесення: якщо від постачальника поставок ще не було, весь обсяг
@@ -4541,6 +4618,89 @@ function allocCardAllTo(ci,si){
   saveAllocOverride();
   rebuildMatches();
 }
+// ── Прив'язка партій до угод ──
+// Номер угоди з 1С зіставляється з номером у назві договору з листа тендерів.
+// Написання різняться («333» vs «333/ЛВ», «670» vs «670 НСЗУ»), тож порівнюємо
+// нормалізовано і приймаємо збіг за префіксом на межі роздільника.
+function _cNum(c){const m=String(c||"").match(/№\s*([^\s]+)/);return m?m[1]:""}
+function _numKey(x){return String(x==null?"":x).toUpperCase().replace(/[\s\u00a0.]/g,"")}
+function _numEq(a,b){
+  const A=_numKey(a),B=_numKey(b);
+  if(!A||!B)return false;
+  if(A===B)return true;
+  const long=A.length>=B.length?A:B,short=A.length>=B.length?B:A;
+  if(!long.startsWith(short))return false;
+  const nxt=long.charAt(short.length);
+  // Межа збігу: далі йде роздільник, або цифровий номер переходить у літерний суфікс
+  // («670» ↔ «670НСЗУ»). Продовження цифрою — це інший номер («49» ≠ «490»).
+  if(/[0-9]/.test(nxt))return false;
+  return !/[A-ZА-ЯЇІЄҐ]/.test(nxt)||/[0-9]/.test(short.charAt(short.length-1));
+}
+// Запасне зіставлення — за цифровими групами. 1С пише «СТМ-16/25», у листі тендерів
+// той самий договір записаний як «16-25»; «12ЛВ» ↔ «12»; «М-412» ↔ «412».
+// Порівнюємо послідовність чисел, тому «49» і «490» лишаються різними.
+function _numDigits(x){const m=String(x==null?"":x).match(/\d+/g);return m?m.join("|"):""}
+function _numEqLoose(a,b){
+  if(_numEq(a,b))return true;
+  const A=_numDigits(a),B=_numDigits(b);
+  return !!A&&A===B;
+}
+// Знаходить тендерну позицію, до якої належить партія
+function lotTender(lot,tenders){
+  if(!lot||!tenders||!tenders.length)return null;
+  let byNum=tenders.filter(t=>_numEq(_cNum(t.c),lot.num));
+  if(!byNum.length)byNum=tenders.filter(t=>_numEqLoose(_cNum(t.c),lot.num));
+  if(byNum.length===1)return byNum[0];
+  if(byNum.length>1&&lot.cdate){
+    const y=lot.cdate.slice(6);
+    const byY=byNum.filter(t=>String(t.c).includes(y)||String(t.c).includes(y.slice(2)));
+    if(byY.length===1)return byY[0];
+  }
+  return byNum.length?byNum[0]:null;
+}
+function lotLinkUI(){
+  const names=Object.keys(purchaseLots||{});
+  let lots=0,linked=0,noNum=0;
+  const problems=[];
+  for(const d of allData){
+    const ls=purchaseLots[d.n];if(!ls||!ls.length)continue;
+    const ts=d.allM||d.t||[];
+    const bad=[];
+    for(const l of ls){
+      lots++;
+      if(l.num==null){noNum++;bad.push(l);continue}
+      if(lotTender(l,ts))linked++;else bad.push(l);
+    }
+    if(bad.length)problems.push({d,bad,total:ls.length,cons:ts.map(t=>_cNum(t.c)).filter(Boolean)});
+  }
+  const pct=lots?Math.round(linked/lots*1000)/10:0;
+  let h='<div style="padding:10px;background:rgba(0,0,0,.35);border-radius:10px;margin-bottom:10px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong style="font-size:12px">🔗 Прив\'язка партій до угод</strong><button class="sort-btn" style="font-size:11px;margin-left:auto" onclick="copyLotLink()">Копіювати</button><button class="sort-btn" style="font-size:11px" onclick="closeAllocDump()">Закрити</button></div>';
+  if(!lots){
+    h+='<div style="font-size:12px;color:#fbbf24">У завантаженому файлі немає реквізитів угоди. Додай у звіт 1С поля «Договір.Номер», «Договір.Дата», «Договір.Ідентифікатор закупівлі» і онови закупівлі.</div></div>';
+    const el0=document.getElementById("alloc-dump");if(el0){el0.innerHTML=h;el0.style.display="block";el0.scrollIntoView({block:"nearest"})}
+    return;
+  }
+  h+=`<div style="font-size:12px;margin-bottom:4px">Партій: <strong>${fmt(lots)}</strong> · прив'язано до угоди: <strong style="color:${pct>90?"var(--accent)":"#fbbf24"}">${fmt(linked)} (${pct}%)</strong>${noNum?` · без номера: <strong>${fmt(noNum)}</strong>`:""}</div>`;
+  h+=`<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Нижче — партії, номер яких не знайшовся серед угод цього препарату. Найчастіше це закупівля поза тендером або інше написання номера в листі тендерів.</div>`;
+  const lines=[`партій ${lots}, прив'язано ${linked} (${pct}%)`];
+  for(const pr of problems.slice(0,120)){
+    h+='<div style="padding:5px 8px;border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);margin-bottom:4px;border-radius:0 6px 6px 0">';
+    h+=`<div style="font-size:11px;font-weight:600">${esc(pr.d.n)}</div>`;
+    h+=`<div style="font-size:10px;color:var(--muted)">угоди препарату: ${esc(pr.cons.join(", ")||"—")}</div>`;
+    lines.push(pr.d.n+"  [угоди: "+pr.cons.join(", ")+"]");
+    for(const l of pr.bad.slice(0,10)){
+      h+=`<div style="font-size:10px;padding:1px 0">№<span style="color:#fca5a5">${esc(l.num==null?"—":l.num)}</span> · ${esc(l.cdate||"")} · ${fmt(l.qty)} ${esc(pr.d.u||"")} · ${esc(String(l.doc).slice(0,60))}</div>`;
+      lines.push("   №"+(l.num==null?"—":l.num)+"\t"+(l.cdate||"")+"\t"+l.qty+"\t"+l.doc);
+    }
+    h+='</div>';
+  }
+  h+='</div>';
+  window._lotLinkTxt=lines.join("\n");
+  const el=document.getElementById("alloc-dump");
+  if(el){el.innerHTML=h;el.style.display="block";el.scrollIntoView({block:"nearest"})}
+}
+function copyLotLink(){const t=window._lotLinkTxt||"";try{navigator.clipboard.writeText(t);alert("Скопійовано")}catch(e){prompt("Скопіюй:",t)}}
 // ── Пошук дублів номенклатури 1С ──
 // Одна тендерна позиція, у яку впирається кілька різних назв із Закупленого.
 // Майже завжди це означає, що на складі завели другу картку на той самий препарат.
@@ -4711,7 +4871,7 @@ function showUpdateBanner(remoteV){
 (function(){
 const c=loadCache();
 if(c){
-allData=c.data||[];allTenders=c.tenders||[];purchasesLastBuy=c.purchasesLastBuy||{};_fimCache=new Map();
+allData=c.data||[];allTenders=c.tenders||[];purchasesLastBuy=c.purchasesLastBuy||{};purchaseLots=c.purchaseLots||{};_fimCache=new Map();
 lastUpdated=c.ts?new Date(c.ts):null;
 if(c.purchases)parsedPurchases=c.purchases;
 if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;if(c.purchasesMonthly)purchasesMonthly=c.purchasesMonthly;
