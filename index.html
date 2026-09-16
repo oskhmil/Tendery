@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 113;
+const APP_VERSION = 114;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1501,7 +1501,7 @@ function multiMatch(text,words){const t=text.toLowerCase();return words.every(w=
 
 // ═══════ LOAD ═══════
 async function loadFromDrive(isRefresh){
-if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;if(c.purchasesMonthly)purchasesMonthly=c.purchasesMonthly;showMain();fetchDriveBackground();return}}
+if(!isRefresh){const c=loadCache();if(c){allData=c.data;allTenders=c.tenders;lastUpdated=c.ts?new Date(c.ts):null;if(c.purchases)parsedPurchases=c.purchases;if(c.purchasesByWH)purchasesByWH=c.purchasesByWH;if(c.purchasesMonthly)purchasesMonthly=c.purchasesMonthly;if(c.purchasesLastBuy)purchasesLastBuy=c.purchasesLastBuy;purchaseLots=c.purchaseLots||{};showMain();fetchDriveBackground();return}}
 showLoader(isRefresh?"Оновлюємо актуальні дані...":"Завантажуємо актуальні дані...");
 await fetchDriveBackground(true);
 }
