@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 114;
+const APP_VERSION = 115;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -4665,7 +4665,15 @@ function allocAuditUI(){
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong style="font-size:12px">🧾 Ручний розподіл проти накладних</strong>'
    +(bad.length?'<button class="sort-btn" style="font-size:11px;margin-left:auto;color:var(--accent)" onclick="allocAuditApplyAll()">Замінити всі розбіжні</button>':'<span style="margin-left:auto"></span>')
    +'<button class="sort-btn" style="font-size:11px" onclick="closeAllocDump()">Закрити</button></div>';
-  if(!rows.length){h+='<div style="font-size:12px;color:var(--muted)">Немає позицій, де є і ручний розподіл, і дані з накладних.</div></div>';}
+  if(!rows.length){
+    const nLots=Object.keys(purchaseLots||{}).length;
+    const nMan=Object.keys(ordersAllocOverride||{}).length;
+    const nMulti=allData.filter(d=>d.multi).length;
+    h+=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Порівнювати нема що. Стан:</div>`;
+    h+=`<div style="font-size:11px;line-height:1.7"><div>Препаратів з партіями (накладні з номером угоди): <strong style="color:${nLots?"var(--accent)":"var(--danger)"}">${nLots}</strong></div><div>Ручних розподілів: <strong>${nMan}</strong></div><div>Позицій від кількох постачальників: <strong>${nMulti}</strong></div></div>`;
+    if(!nLots)h+='<div style="margin-top:8px;padding:7px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">Партій немає. Натисни «☁️ Оновити» на вкладці Моніторинг закупівель — партії зчитуються лише при перечитуванні файлу закупівель, у старому кеші їх нема. Файл 1С має містити колонки з номером і датою договору.</div>';
+    else h+='<div style="margin-top:8px;font-size:11px;color:var(--muted)">Партії є, але жодна позиція з ручним розподілом не покривається ними повністю (потрібно ≥99,5% обсягу). Такі позиції рахуються старою логікою.</div>';
+    h+='</div>';}
   else{
     h+=`<div style="font-size:11px;margin-bottom:8px">Перевірено ${rows.length} · розбіжностей: <strong style="color:${bad.length?"#fbbf24":"var(--accent)"}">${bad.length}</strong></div>`;
     for(let i=0;i<rows.length;i++){
