@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 111;
+const APP_VERSION = 113;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1361,7 +1361,17 @@ const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
 // Замінює каскад «заповнюємо старіший договір першим», який був лише припущенням.
 const factual=lotConsumption(p,allTI);
 let tInfo=allTI;
-const ovEntry=isMulti?_ovGet(ov,p.name):null;
+const ovManual=isMulti?_ovGet(ov,p.name):null;
+// Якщо накладні однозначно кажуть, скільки взято в кожного постачальника, розподіл
+// не треба задавати руками — він уже відомий з номерів договорів. Ручний розподіл
+// (твій або з листа «Розподіл») має пріоритет і автоматику не пускає.
+let ovAuto=null;
+if(isMulti&&!ovManual&&factual){
+  ovAuto={};
+  for(const ent of factual)ovAuto[ent[0].s]=(ovAuto[ent[0].s]||0)+ent[1];
+}
+const ovEntry=ovManual||ovAuto;
+const allocAuto=!ovManual&&!!ovAuto;
 if(isMulti&&ovEntry&&typeof ovEntry==="object"){
 }else if(isMulti&&typeof ovEntry==="string"){
 const first=allTI.filter(t=>t.s===ovEntry);
@@ -1447,7 +1457,7 @@ const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
 const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
 let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
 if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,
+results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,
 realQty:p.qty,totalAlloc,allocMissing,allocExcess});
 }
 // Постачальник у тендерах є, але немає в effective
@@ -1458,7 +1468,7 @@ if(!supTenders.length)continue;
 const stq=supTenders.reduce((s,t)=>s+t.cq,0);
 let sdu=p.unit,sdtq=stq;
 if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
-results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,
+results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,
 realQty:p.qty,totalAlloc,allocMissing,allocExcess});
 }
 }else{
@@ -1932,7 +1942,8 @@ if(_sh)h+=`<div class="chosen-hint" style="color:#93c5fd">📊 По цій уг�
 if(d.multi&&!d.alloc){
 h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено між постачальниками</div><button class="alloc-apply" style="width:100%" onclick="event.stopPropagation();openAllocDialog(${idx})">✎ Розподілити</button></div>`}
 if(d.multi&&d.alloc){
-h+=`<div class="supplier-pick"><div class="title">✓ Розподілено (лист "Розподіл"):</div>`;
+h+=`<div class="supplier-pick"><div class="title">${d.allocAuto?"🧾 Розподілено за накладними:":"✓ Розподілено (лист \"Розподіл\"):"}</div>`;
+if(d.allocAuto)h+=`<div style="font-size:10px;color:var(--muted);margin:-2px 0 4px">Визначено з номерів договорів у документах 1С. Щоб задати вручну — «✎ Змінити розподіл» нижче.</div>`;
 d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
 if(d.allocMissing>0){
 h+=`<div class="alloc-row" style="border-top:1px dashed rgba(245,158,11,.4);margin-top:4px;padding-top:4px"><span class="sup-name" style="color:#fbbf24">⚠ Не розподілено</span><span style="color:#fbbf24;font-weight:600">${fmt(d.allocMissing)} ${esc(d.u)}</span></div>`;
@@ -4560,6 +4571,7 @@ const statusH='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wra
  +'<button class="sort-btn" style="font-size:11px;color:#fbbf24" onclick="dupNomUI()">🔎 Дублі номенклатури 1С</button>'
  +'<button class="sort-btn" style="font-size:11px;color:#93c5fd" onclick="lotLinkUI()">🔗 Прив\'язка партій до угод</button>'
  +`<button class="sort-btn" style="font-size:11px;color:${LOT_MATCH_ON?"var(--accent)":"var(--muted)"}" title="Розподіл спожитого по договорах: за накладними 1С або старим каскадом по датах" onclick="lotMatch(${LOT_MATCH_ON?"false":"true"})">${LOT_MATCH_ON?"✅ по накладних":"⚪ старий каскад"}</button>`
+ +'<button class="sort-btn" style="font-size:11px;color:#f9a8d4" onclick="allocAuditUI()">🧾 Звірити ручний розподіл з накладними</button>'
  +'</div><div id="alloc-dump" style="display:none"></div>';
 if(!conflicts.length){el.innerHTML=statusH+'<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
 // Швидке рознесення: якщо від постачальника поставок ще не було, весь обсяг
@@ -4617,6 +4629,80 @@ function allocCardAllTo(ci,si){
   ordersAllocOverride[d.n]=a;
   saveAllocOverride();
   rebuildMatches();
+}
+// ── Звірка ручного розподілу з фактом накладних ──
+// Ручний розподіл має пріоритет над автоматикою, тож помилка в ньому переживає
+// будь-яке оновлення даних. Тут показуємо розбіжності й даємо замінити.
+function lotAllocFor(d){
+  const p=(parsedPurchases||[]).find(x=>x.name===d.n);
+  if(!p)return null;
+  const f=lotConsumption(p,d.allM||[]);
+  if(!f)return null;
+  const out={};
+  for(const e of f)out[e[0].s]=(out[e[0].s]||0)+e[1];
+  return out;
+}
+function allocAuditRows(){
+  const seen=new Set(),rows=[];
+  for(const d of allData){
+    if(!d.multi||!d.n||seen.has(d.n))continue;
+    const man=_ovGet(ordersAllocOverride,d.n);
+    if(!man||typeof man!=="object")continue;
+    seen.add(d.n);
+    const auto=lotAllocFor(d);
+    if(!auto)continue;
+    const sups=[...new Set([...Object.keys(man),...Object.keys(auto)])];
+    const diff=sups.filter(x=>Math.abs((man[x]||0)-(auto[x]||0))>0.5);
+    rows.push({n:d.n,u:d.u,man,auto,sups,diff});
+  }
+  return rows;
+}
+function allocAuditUI(){
+  const rows=allocAuditRows();
+  window._auditRows=rows;
+  const bad=rows.filter(r=>r.diff.length);
+  let h='<div style="padding:10px;background:rgba(0,0,0,.35);border-radius:10px;margin-bottom:10px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong style="font-size:12px">🧾 Ручний розподіл проти накладних</strong>'
+   +(bad.length?'<button class="sort-btn" style="font-size:11px;margin-left:auto;color:var(--accent)" onclick="allocAuditApplyAll()">Замінити всі розбіжні</button>':'<span style="margin-left:auto"></span>')
+   +'<button class="sort-btn" style="font-size:11px" onclick="closeAllocDump()">Закрити</button></div>';
+  if(!rows.length){h+='<div style="font-size:12px;color:var(--muted)">Немає позицій, де є і ручний розподіл, і дані з накладних.</div></div>';}
+  else{
+    h+=`<div style="font-size:11px;margin-bottom:8px">Перевірено ${rows.length} · розбіжностей: <strong style="color:${bad.length?"#fbbf24":"var(--accent)"}">${bad.length}</strong></div>`;
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i],ok=!r.diff.length;
+      h+=`<div style="padding:6px 8px;border-left:3px solid ${ok?"var(--accent)":"#fbbf24"};background:rgba(255,255,255,.03);margin-bottom:4px;border-radius:0 6px 6px 0">`;
+      h+=`<div style="display:flex;gap:8px;align-items:center"><div style="flex:1;min-width:0;font-size:11px;font-weight:600">${ok?"✓":"⚠"} ${esc(r.n)}</div>`;
+      if(!ok)h+=`<button class="sort-btn" style="font-size:10px;color:var(--accent);flex-shrink:0" onclick="allocAuditApply(${i})">Замінити</button>`;
+      h+='</div>';
+      for(const sp of r.sups){
+        const a=r.man[sp]||0,b=r.auto[sp]||0,d2=Math.abs(a-b)>0.5;
+        h+=`<div style="font-size:10px;padding:1px 0;color:${d2?"#fbbf24":"var(--muted)"}">${esc(sp)}: руками <strong>${fmt(a)}</strong> → за накладними <strong>${fmt(b)}</strong> ${esc(r.u||"")}</div>`;
+      }
+      h+='</div>';
+    }
+  }
+  h+='</div>';
+  const el=document.getElementById("alloc-dump");
+  if(el){el.innerHTML=h;el.style.display="block";el.scrollIntoView({block:"nearest"})}
+}
+function _auditDrop(n){
+  for(const k of Object.keys(ordersAllocOverride))if(_allocKey(k)===_allocKey(n))delete ordersAllocOverride[k];
+}
+function allocAuditApply(i){
+  const r=(window._auditRows||[])[i];if(!r)return;
+  _auditDrop(r.n);
+  saveAllocOverride();
+  rebuildMatches();
+  allocAuditUI();
+}
+function allocAuditApplyAll(){
+  const bad=(window._auditRows||[]).filter(r=>r.diff.length);
+  if(!bad.length)return;
+  if(!confirm(`Зняти ручний розподіл на ${bad.length} позиціях? Вони почнуть рахуватись за накладними.`))return;
+  for(const r of bad)_auditDrop(r.n);
+  saveAllocOverride();
+  rebuildMatches();
+  allocAuditUI();
 }
 // ── Прив'язка партій до угод ──
 // Номер угоди з 1С зіставляється з номером у назві договору з листа тендерів.
