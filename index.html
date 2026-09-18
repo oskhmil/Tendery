@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 122;
+const APP_VERSION = 123;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1168,6 +1168,11 @@ return"ok";
 const STOP=new Set("РОЗЧИН ДЛЯ ІНФУЗІЙ ТАБЛЕТКИ КАПСУЛИ ПОРОШОК СУСПЕНЗІЯ КОНЦЕНТРАТ ЛІОФІЛІЗАТ ВКРИТІ ПО МЛ МГ Р-Н ФЛАК АМП В У І ТА АБО ЛІОФ ПОР КРАПЛІ ОЧНІ ТАБ ЕМУЛЬС АЕРОЗОЛЬ КОНЦ СУСП КАП НАШКІРН НАШКІРНИЙ ОЧН РОЗЧ-К ПЕРЕНТЕРАЛЬНОГО ЗАСТОС ТАБЛ КАПС МАЗЬ КРЕМ ГЕЛЬ СПРЕЙ СИРОП ЕМУЛ ЕМУЛЬСІЯ НАШКІРНА КОНЦЕНТР ПЛІВКА НАЗАЛЬНА ГРАНУЛИ ПАСТА СУПОЗИТОРІЇ КР Д Р ГРАН РОЗЧИНИ ЛІОФІЛІЗОВАНИЙ КРАП".split(" "));
 function norm(s){return s.toUpperCase().trim().replace(/®/g,"").replace(/\u00a0/g," ").replace(/\u0060/g,"'").replace(/\u2019/g,"'").replace(/\s*-\s*/g,"-").replace(/\s+/g," ")}
 function getBrand(s){const words=norm(s).split(" "),tokens=[];for(const w of words){let c=w.replace(/[,.:;]+$/,"").replace(/\d+[%]?$/,"");if(!c)continue;if(STOP.has(c)||c.length<3||STOP.has(c.split(/[./]/)[0])){if(tokens.length)break;continue}if(/^\d+[.,]?\d*(МГ|МЛ|МКГ|МО|ОД|Г|Л|%)/.test(c)||/^\d+[.,]?\d*$/.test(c)||c.startsWith("№")||c.startsWith("(")||/^МГ\/МЛ$/i.test(c)||/^МКГ\/МЛ$/i.test(c))break;tokens.push(c);if(tokens.length>=3)break}return tokens}
+// Зведення літер, що різняться лише абеткою. Частину номенклатури заводили з
+// російських джерел, тож «ПРЕДНИЗОЛОН» і «ПРЕДНІЗОЛОН» — той самий препарат.
+// tokMatch це вже враховував при доборі кандидатів; уточнюючі фільтри нижче — ні,
+// і через це угода з «и» відкидалась як інший бренд, щойно з'являвся другий кандидат.
+function foldCyr(w){return String(w==null?"":w).replace(/[ИЫ]/g,"І").replace(/[ЭЁ]/g,"Е").replace(/Ъ/g,"Ь")}
 function stemUk(w){if(w.length<=4)return w;for(const s of["ИНУ","ІНУ","ОНУ","АТУ","ЕТУ","ИНА","ІНА","ОМ","ІМ","ОЇ","ЕЙ","ІЙ","ОГО","ОМУ","ІВ","ІН","АМ","ЯМ","У","А","Е","І","И","Ю","Я","О"])if(w.endsWith(s)&&w.length-s.length>=4)return w.slice(0,-s.length);return w}
 function getForm(s){const u=s.toUpperCase(),f=new Set();if(/РОЗЧИН|Р-Н|Р\/Н|Д\/ІН|КОНЦ\.|КОНЦЕНТРАТ/.test(u))f.add("SOL");if(/ТАБЛ|ТАБ[\s.,]/.test(u))f.add("TAB");if(/КАПС/.test(u))f.add("CAP");if(/КРАПЛІ|КР\.ОЧН|ОЧНІ/.test(u))f.add("DRP");if(/СУПОЗИТОР/.test(u))f.add("SUP");if(/ПОРОШОК|ПОР[\s.,]|ПОР\//.test(u))f.add("PWD");if(/ЕМУЛЬС|ЕМУЛ/.test(u))f.add("EMU");if(/АЕРОЗОЛЬ/.test(u))f.add("AER");if(/СУСПЕНЗІЯ|СУСП/.test(u))f.add("SSP");if(/ІНФУЗІЙ|ІНФУЗ/.test(u))f.add("INF");if(/ІНГАЛЯЦІ/.test(u))f.add("INH");if(/ГРАНУЛИ|ГРАН/.test(u))f.add("GRN");if(/МАЗЬ/.test(u))f.add("OIN");return f}
 
@@ -1336,7 +1341,7 @@ const results=[];
 for(const p of purchases){
 const pt=getBrand(p.name),pF=getForm(p.name),pD=getDoses(p.name),pV=getVolumes(p.name);
 const pDC=getDosesCanon(p.name);
-const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=stemUk(pt[1]),s2=stemUk(tt[1]);if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1)){const h1=pt[1].split("-")[0],h2=tt[1].split("-")[0];const hs1=stemUk(h1),hs2=stemUk(h2);if(hs1.length>=4&&hs2.length>=4){if(hs1!==hs2&&!hs1.startsWith(hs2)&&!hs2.startsWith(hs1))continue}}}if(!formsOk(pF,getForm(t.commercial)))continue;
+const bm=[];for(let i=0;i<tenders.length;i++){const t=tenders[i],tt=getBrand(t.commercial);if(!tokMatch(pt,tt))continue;if(pt.length>=2&&tt.length>=2){const s1=foldCyr(stemUk(pt[1])),s2=foldCyr(stemUk(tt[1]));if(s1.length>=4&&s2.length>=4&&s1!==s2&&!s1.startsWith(s2)&&!s2.startsWith(s1)){const h1=pt[1].split("-")[0],h2=tt[1].split("-")[0];const hs1=foldCyr(stemUk(h1)),hs2=foldCyr(stemUk(h2));if(hs1.length>=4&&hs2.length>=4){if(hs1!==hs2&&!hs1.startsWith(hs2)&&!hs2.startsWith(hs1))continue}}}if(!formsOk(pF,getForm(t.commercial)))continue;
 
 // Container check: use improved getContainer (strips accessories) with original comparison
 const pCont=getContainer(p.name),tCont=getContainer(t.commercial);
@@ -1363,8 +1368,8 @@ if(matched.length>1){
     for(let k=0;k<Math.min(tb.length,2);k++){
       const parts=tb[k].split("-");
       if(parts.length<2)continue;
-      const suf=stemUk(parts.slice(1).join("-").replace(/['"’ʼ`]/g,""));
-      if(suf.length>=4&&_pn.indexOf(suf.slice(0,4))>=0)return true;
+      const suf=foldCyr(stemUk(parts.slice(1).join("-").replace(/['"’ʼ`]/g,"")));
+      if(suf.length>=4&&foldCyr(_pn).indexOf(suf.slice(0,4))>=0)return true;
     }
     return false;
   });
@@ -1375,8 +1380,8 @@ if(matched.length>1&&pPk>1){const pkf=matched.filter(i=>{const tPk=extractPkStri
 // токеном (за стемом), асиметричні дефісні відкидаємо (Рінгера ≠ РІНГЕР-ЛАКТАТНИЙ, коли існує
 // чистий РОЗЧИН РІНГЕРА). Якщо точних нема — поведінка не змінюється.
 if(matched.length>1&&pt.length){
-  const pstem=stemUk(pt[0]);
-  const exact=matched.filter(i=>{const tb=getBrand(tenders[i].commercial);return tb.length&&stemUk(tb[0])===pstem});
+  const pstem=foldCyr(stemUk(pt[0]));
+  const exact=matched.filter(i=>{const tb=getBrand(tenders[i].commercial);return tb.length&&foldCyr(stemUk(tb[0]))===pstem});
   if(exact.length&&exact.length<matched.length)matched=exact;
 }
 if(matched.length>1){const df=matched.filter(i=>{const tD=getDoses(tenders[i].commercial);if(!pD.size||!tD.size)return true;if(setsOverlap(pD,tD))return true;const pU=new Set([...pD].map(d=>d.replace(/[\d.,]+/,""))),tU=new Set([...tD].map(d=>d.replace(/[\d.,]+/,"")));const sh=[...pU].filter(u=>tU.has(u));if(!sh.length)return true;return setsOverlap(new Set([...pD].filter(d=>sh.some(u=>d.endsWith(u)))),new Set([...tD].filter(d=>sh.some(u=>d.endsWith(u)))))});if(df.length>0)matched=df}
@@ -1384,10 +1389,10 @@ if(matched.length>=1&&pV.size){const vf=matched.filter(i=>{const tV=getVolumes(t
 // Перевага за ДРУГИМ брендовим токеном: "ЛОНГОКАЇН ХЕВІ" → угода з ХЕВІ, а звичайний
 // "ЛОНГОКАЇН" → угода без нього. Спрацьовує лише як звуження серед кількох кандидатів.
 if(matched.length>1){
-  const p1=pt.length>1?stemUk(pt[1]):null;
+  const p1=pt.length>1?foldCyr(stemUk(pt[1])):null;
   const pref=matched.filter(i=>{
     const tb=getBrand(tenders[i].commercial);
-    const t1=tb.length>1?stemUk(tb[1]):null;
+    const t1=tb.length>1?foldCyr(stemUk(tb[1])):null;
     if(p1&&t1)return p1===t1||p1.startsWith(t1)||t1.startsWith(p1);
     return !p1&&!t1;
   });
