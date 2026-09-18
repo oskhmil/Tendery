@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 121;
+const APP_VERSION = 122;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -324,11 +324,13 @@ function lotConsumption(p,tenders){
     matched+=l.qty||0;
   }
   if(!m.size)return null;
-  // Раніше тут стояла вимога покриття 99,5% — інакше факт відкидався цілком.
-  // Це означало, що кілька приходів без номера договору знецінювали тисячі
-  // підтверджених. Тепер факт застосовується від половини обсягу, а непокритий
-  // залишок чесно показується як нерозподілений, а не розкидається каскадом.
-  if(matched<p.qty*0.5)return null;
+  // Порогу покриття тут свідомо немає. Якщо номер угоди в накладній не збігається з
+  // жодною угодою препарату, цю партію не можна списати на іншу угоду — номер прямо
+  // каже, що товар зайшов не по ній. Тому беремо стільки, скільки підтверджено
+  // документами, а решту лишаємо нерозподіленою і показуємо явно. Раніше тут стояв
+  // поріг (99,5%, потім 50%), і нижче за нього весь факт відкидався, а каскад
+  // списував увесь обсяг на єдину видиму угоду — саме так 1 865 ампул Преднізолону
+  // за договором 102-ЛВ опинились на ЛТМО-5 Дарниці й дали 118%.
   m._matched=matched;
   return m;
 }
