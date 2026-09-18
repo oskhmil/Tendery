@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 116;
+const APP_VERSION = 119;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -319,7 +319,12 @@ function lotConsumption(p,tenders){
     matched+=l.qty||0;
   }
   if(!m.size)return null;
-  if(matched<p.qty*0.995)return null;
+  // Раніше тут стояла вимога покриття 99,5% — інакше факт відкидався цілком.
+  // Це означало, що кілька приходів без номера договору знецінювали тисячі
+  // підтверджених. Тепер факт застосовується від половини обсягу, а непокритий
+  // залишок чесно показується як нерозподілений, а не розкидається каскадом.
+  if(matched<p.qty*0.5)return null;
+  m._matched=matched;
   return m;
 }
 let purchasesByWH={};       // {warehouseName: {drugName: qty}} — per-warehouse purchased qty for pending scoping
@@ -4595,6 +4600,7 @@ const statusH='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wra
  +'<button class="sort-btn" style="font-size:11px;color:#93c5fd" onclick="lotLinkUI()">🔗 Прив\'язка партій до угод</button>'
  +`<button class="sort-btn" style="font-size:11px;color:${LOT_MATCH_ON?"var(--accent)":"var(--muted)"}" title="Розподіл спожитого по договорах: за накладними 1С або старим каскадом по датах" onclick="lotMatch(${LOT_MATCH_ON?"false":"true"})">${LOT_MATCH_ON?"✅ по накладних":"⚪ старий каскад"}</button>`
  +'<button class="sort-btn" style="font-size:11px;color:#f9a8d4" onclick="allocAuditUI()">🧾 Звірити ручний розподіл з накладними</button>'
+ +'<button class="sort-btn" style="font-size:11px;color:#a7f3d0" onclick="dataCheckUI()">🧪 Перевірка даних</button>'
  +'</div><div id="alloc-dump" style="display:none"></div>';
 if(!conflicts.length){el.innerHTML=statusH+'<div class="empty-state" style="padding:30px 20px"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Усі конфлікти вирішено</div><div style="font-size:13px">Розподіл задано в застосунку або в листі "Розподіл"</div></div>'+doneH;return}
 // Швидке рознесення: якщо від постачальника поставок ще не було, весь обсяг
@@ -4652,6 +4658,57 @@ function allocCardAllTo(ci,si){
   ordersAllocOverride[d.n]=a;
   saveAllocOverride();
   rebuildMatches();
+}
+// ── Автоматична перевірка даних ──
+// 1) Упаковки. У тендері ціна за упаковку, у накладній за штуку. Якщо перерахунок
+//    правильний, ціна_тендера / розмір_упаковки = ціна з накладної. Якщо ж накладна
+//    збігається з НЕПОДІЛЕНОЮ ціною — множити не треба було.
+// 2) Закупки без угоди, у яких номер договору в накладній є серед тендерних —
+//    це не позатендерна закупівля, а невдалий матч (доза, назва).
+function _lotUnitPrice(l){return (l&&l.qty>0&&typeof l.sum==="number")?l.sum/l.qty:null}
+function _near(a,b){return b>0&&Math.abs(a-b)/b<0.02}
+function dataCheckUI(){
+  const packBad=[],packOk=[],packUnk=[];
+  for(const d of allData){
+    const lots=purchaseLots[d.n];if(!lots||!lots.length)continue;
+    const ts=d.allM||d.t||[];
+    for(const t of ts){
+      if(!(t.pk>1)||t.p==null)continue;
+      const mine=lots.filter(l=>lotTender(l,ts)===t).map(_lotUnitPrice).filter(x=>x!=null);
+      if(!mine.length){packUnk.push({d,t});continue}
+      const up=mine.reduce((a,b)=>a+b,0)/mine.length;
+      if(_near(up,t.p/t.pk))packOk.push({d,t,up});
+      else if(_near(up,t.p))packBad.push({d,t,up});
+      else packUnk.push({d,t,up});
+    }
+  }
+  const tNums=[];
+  for(const d of allData)for(const t of (d.allM||d.t||[]))if(t.c)tNums.push(_cNum(t.c));
+  const uniq=[...new Set(tNums)].filter(Boolean);
+  const missed=[];
+  for(const d of allData){
+    if((d.t&&d.t.length)||d.multi)continue;           // угода є — не цей випадок
+    const lots=purchaseLots[d.n];if(!lots||!lots.length)continue;
+    const hit=[...new Set(lots.map(l=>l.num).filter(Boolean))].filter(n=>uniq.some(u=>_numEqLoose(u,n)));
+    if(hit.length)missed.push({d,nums:hit});
+  }
+  let h='<div style="padding:10px;background:rgba(0,0,0,.35);border-radius:10px;margin-bottom:10px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong style="font-size:12px">🧪 Перевірка даних</strong><button class="sort-btn" style="font-size:11px;margin-left:auto" onclick="closeAllocDump()">Закрити</button></div>';
+  h+=`<div style="font-size:12px;font-weight:600;margin:6px 0 4px">Перерахунок упаковок у штуки</div>`;
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Підтверджено ціною: <strong style="color:var(--accent)">${packOk.length}</strong> · помилкових: <strong style="color:${packBad.length?"var(--danger)":"var(--accent)"}">${packBad.length}</strong> · нічим перевірити: <strong>${packUnk.length}</strong></div>`;
+  for(const b of packBad){
+    h+=`<div style="padding:5px 8px;border-left:3px solid var(--danger);background:rgba(239,68,68,.07);margin-bottom:4px;border-radius:0 6px 6px 0"><div style="font-size:11px;font-weight:600">${esc(b.d.n)}</div><div style="font-size:10px;color:#fca5a5">${esc(b.t.s)} · ${esc(String(b.t.c||"").replace(/^Договір\s*/i,""))} — множення ×${b.t.pk} зайве: ціна в угоді ${fmt(Math.round(b.t.p*100)/100)} збігається з ціною в накладній ${fmt(Math.round(b.up*100)/100)}</div></div>`;
+  }
+  if(!packBad.length)h+='<div style="font-size:11px;color:var(--accent);margin-bottom:6px">Помилок перерахунку не знайдено.</div>';
+  h+=`<div style="font-size:12px;font-weight:600;margin:12px 0 4px">Закупки без угоди, хоча договір тендерний</div>`;
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Знайдено: <strong style="color:${missed.length?"#fbbf24":"var(--accent)"}">${missed.length}</strong>. Тут закупівля точно за тендером — номер договору з накладної є серед угод. Не зматчилось через назву або дозу.</div>`;
+  for(const m of missed.slice(0,60)){
+    h+=`<div style="padding:5px 8px;border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);margin-bottom:4px;border-radius:0 6px 6px 0"><div style="font-size:11px;font-weight:600">${esc(m.d.n)}</div><div style="font-size:10px;color:var(--muted)">договір у накладній: ${esc(m.nums.join(", "))} · закуплено ${fmt(m.d.pq)} ${esc(m.d.u||"")}</div></div>`;
+  }
+  if(!missed.length)h+='<div style="font-size:11px;color:var(--accent)">Немає: усі закупки без угоди справді позатендерні.</div>';
+  h+='</div>';
+  const el=document.getElementById("alloc-dump");
+  if(el){el.innerHTML=h;el.style.display="block";el.scrollIntoView({block:"nearest"})}
 }
 // ── Звірка ручного розподілу з фактом накладних ──
 // Ручний розподіл має пріоритет над автоматикою, тож помилка в ньому переживає
@@ -4812,6 +4869,30 @@ function lotLinkUI(){
     }
     h+='</div>';
   }
+  // ── Друга секція: партій менше, ніж закуплено ──
+  // Звіт вище ловить партії, що не знайшли угоду. Але буває навпаки: усі партії
+  // прив'язані, а їхня сума менша за закуплений обсяг — частина приходів у
+  // вивантаженні 1С взагалі без рядків «Надходження». Саме такий залишок і висить
+  // потім як «Не розподілено», і в першій секції він не видно.
+  const gaps=[];
+  for(const d of allData){
+    if(!d.n||d.pq==null||d.pq<=0)continue;
+    const p2=(parsedPurchases||[]).find(x=>x.name===d.n);
+    if(!p2)continue;
+    const ls=purchaseLots[d.n];
+    const sum=(ls||[]).reduce((a,l)=>a+(l.qty||0),0);
+    if(sum>=p2.qty*0.999)continue;
+    if(gaps.some(g=>g.n===d.n))continue;
+    gaps.push({n:d.n,u:d.u,qty:p2.qty,sum,lack:p2.qty-sum,nlots:(ls||[]).length});
+  }
+  gaps.sort((a,b)=>b.lack-a.lack);
+  h+=`<div style="font-size:12px;font-weight:600;margin:12px 0 4px">Партій менше, ніж закуплено</div>`;
+  h+=`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Знайдено: <strong style="color:${gaps.length?"#fbbf24":"var(--accent)"}">${gaps.length}</strong>. Тут угода відома, але частина обсягу не має рядків надходження у вивантаженні — саме вона й лишається нерозподіленою.</div>`;
+  for(const g of gaps.slice(0,60)){
+    h+=`<div style="padding:5px 8px;border-left:3px solid #fbbf24;background:rgba(251,191,36,.06);margin-bottom:4px;border-radius:0 6px 6px 0"><div style="font-size:11px;font-weight:600">${esc(g.n)}</div><div style="font-size:10px;color:var(--muted)">закуплено ${fmt(g.qty)} ${esc(g.u||"")} · у партіях ${fmt(g.sum)} (${g.nlots} шт) · <span style="color:#fca5a5">бракує ${fmt(g.lack)}</span></div></div>`;
+    lines.push("БРАК\t"+g.n+"\tзакуплено "+g.qty+"\tу партіях "+g.sum+"\tбракує "+g.lack);
+  }
+  if(!gaps.length)h+='<div style="font-size:11px;color:var(--accent)">Немає — кожна закупка повністю розкладена на партії.</div>';
   h+='</div>';
   window._lotLinkTxt=lines.join("\n");
   const el=document.getElementById("alloc-dump");
