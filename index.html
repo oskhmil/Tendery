@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 119;
+const APP_VERSION = 121;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -301,6 +301,11 @@ let parsedPurchases=null;
 let purchaseLots={};        // {drugName: [{doc,ts,num,cdate,pid,qty,sum,wh}]} — партії з номером угоди (1С)
 // Перемикач прив'язки по партіях. Вимикається через консоль: lotMatch(false) — тоді
 // матчер повертається до старого каскаду по датах договорів, для звірки цифр.
+// Позиції, для яких запис у листі «Розподіл» свідомо ігнорується: лист створювався
+// до появи номерів угод у накладних, і його цифри застигають на момент внесення.
+// Рядок в Excel не чіпаємо — просто перестаємо його застосовувати.
+let allocIgnoreSheet={};
+function saveAllocIgnore(){try{localStorage.setItem(USER_KEY+"_allocign",JSON.stringify(allocIgnoreSheet))}catch(e){}}
 let LOT_MATCH_ON=(function(){try{return localStorage.getItem("tendertrack_lotmatch")!=="0"}catch(e){return true}})();
 function lotMatch(on){try{localStorage.setItem("tendertrack_lotmatch",on?"1":"0")}catch(e){}LOT_MATCH_ON=!!on;if(typeof rebuildMatches==="function")rebuildMatches();return LOT_MATCH_ON}
 // Скільки спожито по кожному договору за фактом накладних.
@@ -1311,7 +1316,12 @@ function dosesOk(pD,tD){
 // Нормалізований ключ переживає такі зміни.
 function _allocKey(n){return String(n==null?"":n).toLowerCase().replace(/[\s\u00a0]+/g," ").replace(/[.,;:\u2013\u2014-]+$/,"").trim()}
 function _effOverrides(){
-  const m=Object.assign({},overrides,ordersAllocOverride);
+  const sheet={};
+  for(const k of Object.keys(overrides||{})){
+    if(allocIgnoreSheet[k]||allocIgnoreSheet[_allocKey(k)])continue;
+    sheet[k]=overrides[k];
+  }
+  const m=Object.assign({},sheet,ordersAllocOverride);
   // Додаємо нормалізовані аліаси, не затираючи точні збіги
   for(const k of Object.keys(m)){const nk=_allocKey(k);if(nk&&m[nk]===undefined)m[nk]=m[k];}
   return m;
@@ -1389,7 +1399,15 @@ const uSup=[...new Set(allTI.map(t=>t.s))];const isMulti=uSup.length>1;
 // Замінює каскад «заповнюємо старіший договір першим», який був лише припущенням.
 const factual=lotConsumption(p,allTI);
 let tInfo=allTI;
-const ovManual=isMulti?_ovGet(ov,p.name):null;
+// Пріоритет джерел розподілу:
+//   1. заданий у застосунку — свідома дія, завжди головніший;
+//   2. факт із накладних — коли номери угод відомі;
+//   3. лист «Розподіл» — лише там, де накладні нічого не кажуть.
+// Лист створювався до появи номерів угод і його цифри застигають на момент
+// внесення, тож перебивати ним факт означало б рахувати за застарілими даними.
+const ovApp=isMulti?_ovGet(ordersAllocOverride,p.name):null;
+const ovSheet=isMulti?_ovGet(ov,p.name):null;
+const ovManual=ovApp||(factual?null:ovSheet);
 // Якщо накладні однозначно кажуть, скільки взято в кожного постачальника, розподіл
 // не треба задавати руками — він уже відомий з номерів договорів. Ручний розподіл
 // (твій або з листа «Розподіл») має пріоритет і автоматику не пускає.
@@ -2381,6 +2399,7 @@ function loadVen(){
   const hd=loadKey("_hidden");if(hd)ordersHidden=hd||{};
   const sc=loadKey("_supchoice");if(sc)ordersSupplierChoice=sc||{};
   const ao=loadKey("_allocov");if(ao)ordersAllocOverride=ao||{};
+  const ai=loadKey("_allocign");if(ai)allocIgnoreSheet=ai||{};
   const ml=loadKey("_mlink");if(ml)ordersManualLink=ml||{};
   loadSyncMeta();
 }
@@ -4726,14 +4745,17 @@ function allocAuditRows(){
   const seen=new Set(),rows=[];
   for(const d of allData){
     if(!d.multi||!d.n||seen.has(d.n))continue;
-    const man=_ovGet(ordersAllocOverride,d.n);
+    const inApp=_ovGet(ordersAllocOverride,d.n);
+    const inSheet=_ovGet(overrides,d.n);
+    const man=inApp||inSheet;
     if(!man||typeof man!=="object")continue;
+    if(!inApp&&(allocIgnoreSheet[d.n]||allocIgnoreSheet[_allocKey(d.n)]))continue;
     seen.add(d.n);
     const auto=lotAllocFor(d);
     if(!auto)continue;
     const sups=[...new Set([...Object.keys(man),...Object.keys(auto)])];
     const diff=sups.filter(x=>Math.abs((man[x]||0)-(auto[x]||0))>0.5);
-    rows.push({n:d.n,u:d.u,man,auto,sups,diff});
+    rows.push({n:d.n,u:d.u,man,auto,sups,diff,src:inApp?"застосунок":"лист «Розподіл»"});
   }
   return rows;
 }
@@ -4759,7 +4781,7 @@ function allocAuditUI(){
     for(let i=0;i<rows.length;i++){
       const r=rows[i],ok=!r.diff.length;
       h+=`<div style="padding:6px 8px;border-left:3px solid ${ok?"var(--accent)":"#fbbf24"};background:rgba(255,255,255,.03);margin-bottom:4px;border-radius:0 6px 6px 0">`;
-      h+=`<div style="display:flex;gap:8px;align-items:center"><div style="flex:1;min-width:0;font-size:11px;font-weight:600">${ok?"✓":"⚠"} ${esc(r.n)}</div>`;
+      h+=`<div style="display:flex;gap:8px;align-items:center"><div style="flex:1;min-width:0;font-size:11px;font-weight:600">${ok?"✓":"⚠"} ${esc(r.n)}<span style="font-weight:400;color:var(--muted);font-size:10px"> · ${esc(r.src)}</span></div>`;
       if(!ok)h+=`<button class="sort-btn" style="font-size:10px;color:var(--accent);flex-shrink:0" onclick="allocAuditApply(${i})">Замінити</button>`;
       h+='</div>';
       for(const sp of r.sups){
@@ -4780,6 +4802,8 @@ function allocAuditApply(i){
   const r=(window._auditRows||[])[i];if(!r)return;
   _auditDrop(r.n);
   saveAllocOverride();
+  // Рядок із листа «Розподіл» видалити звідси неможливо — гасимо його позначкою
+  if(_ovGet(overrides,r.n)){allocIgnoreSheet[r.n]=1;saveAllocIgnore()}
   rebuildMatches();
   allocAuditUI();
 }
@@ -4787,8 +4811,8 @@ function allocAuditApplyAll(){
   const bad=(window._auditRows||[]).filter(r=>r.diff.length);
   if(!bad.length)return;
   if(!confirm(`Зняти ручний розподіл на ${bad.length} позиціях? Вони почнуть рахуватись за накладними.`))return;
-  for(const r of bad)_auditDrop(r.n);
-  saveAllocOverride();
+  for(const r of bad){_auditDrop(r.n);if(_ovGet(overrides,r.n))allocIgnoreSheet[r.n]=1}
+  saveAllocOverride();saveAllocIgnore();
   rebuildMatches();
   allocAuditUI();
 }
