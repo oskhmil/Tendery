@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 123;
+const APP_VERSION = 124;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1121,8 +1121,10 @@ const firstActive=activeIdx[0],lastActive=activeIdx[activeIdx.length-1];
 const periodStart=months[firstActive].periodStart,periodEnd=months[lastActive].periodEnd;
 const daysTotal=activeIdx.reduce((s,i)=>s+months[i].days,0);
 
+// Назви беремо з УСІХ місяців, не лише увімкнених: препарат, що з'явився тільки
+// у вимкненому (наприклад, неповному поточному) місяці, все одно має залишок.
 const allNames=new Set();
-activeIdx.forEach(i=>Object.keys(months[i].drugs).forEach(n=>allNames.add(n)));
+months.forEach(m=>Object.keys(m.drugs).forEach(n=>allNames.add(n)));
 
 const items=[];
 for(const name of allNames){
@@ -1139,17 +1141,23 @@ const active=(d.used>0||d.income>0||d.start>0||d.end>0);
 if(active&&firstIdx<0)firstIdx=i;
 if(firstIdx>=0&&i>=firstIdx){totalUsed+=d.used;totalDays+=months[i].days}
 }
-// Stock = end of last enabled month where drug has data
-for(let k=activeIdx.length-1;k>=0;k--){
-const d=months[activeIdx[k]].drugs[name];
-if(d){stock=d.end;break}
+// Залишок — факт на дату, а не середнє. Беремо кінець НАЙСВІЖІШОГО місяця, де
+// препарат є, незалежно від того, чи увімкнений цей місяць у статистиці. Маска
+// місяців впливає тільки на середній розхід. Раніше вимкнення неповного вересня
+// відкочувало залишок на 1 вересня і ховало вересневі поставки.
+let lastDataIdx=-1;
+for(let k=months.length-1;k>=0;k--){
+const d=months[k].drugs[name];
+if(d){stock=d.end;lastDataIdx=k;break}
 }
-if(firstIdx<0)continue;
+// Препарат без руху в увімкнених місяцях, але із залишком — лишаємо: розхід 0,
+// дефіциту не дасть, зате його залишок не загубиться при об'єднанні назв.
+if(firstIdx<0&&!(stock>0))continue;
 const dailyRate=totalDays>0?totalUsed/totalDays:0;
 const need=dailyRate*horizonDays;
 const deficit=Math.max(0,need-stock);
 const daysLeft=dailyRate>0?stock/dailyRate:99999;
-items.push({name,unit,stock,totalUsed,totalDays,dailyRate,firstMonth:months[firstIdx].sheet,monthly,need,deficit,daysLeft});
+items.push({name,unit,stock,totalUsed,totalDays,dailyRate,firstMonth:months[firstIdx>=0?firstIdx:lastDataIdx].sheet,monthly,need,deficit,daysLeft});
 }
 return{items,periodStart,periodEnd,daysTotal};
 }
@@ -2690,8 +2698,9 @@ function mergeF6Aliases(items,horizon){
     if(al.length<2)continue;
     // Головна назва — та, що є в останньому активному місяці; серед таких — з більшим розходом
     let main=al[0],best=-1;
+    const lastIdx=f6Months.length-1;
     for(const a of al){
-      const live=!!(a.monthly&&a.monthly[lastActive]);
+      const live=!!(a.monthly&&a.monthly[lastIdx]);
       const score=(live?1e9:0)+(a.dailyRate||0);
       if(score>best){best=score;main=a}
     }
@@ -2707,7 +2716,11 @@ function mergeF6Aliases(items,horizon){
       if(any&&firstIdx<0)firstIdx=i;
       if(firstIdx>=0){totalUsed+=used;totalDays+=f6Months[i].days}
     }
-    for(const a of al){const d=a.monthly&&a.monthly[lastActive];if(d)stock+=d.end||0}
+    // Залишок кожної назви — на кінець її найсвіжішого місяця, маска тут не діє
+    for(const a of al){
+      const mm=a.monthly||[];
+      for(let k=mm.length-1;k>=0;k--){if(mm[k]){stock+=mm[k].end||0;break}}
+    }
     g.name=main.name;g.unit=main.unit||g.unit;
     g.stock=stock;g.totalUsed=totalUsed;g.totalDays=totalDays;
     g.dailyRate=totalDays>0?totalUsed/totalDays:0;
