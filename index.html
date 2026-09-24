@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 125;
+const APP_VERSION = 126;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1512,8 +1512,21 @@ const allocExcess=Math.max(0,totalAlloc-p.qty);
 // Окрема картка для кожного постачальника з ефективною кількістю
 for(const sup of Object.keys(effective)){
 const supQty=effective[sup]||0;
-const supTenders=allTI.filter(t=>t.s===sup);
+// Кілька договорів одного постачальника: кожному рядку угоди записуємо, скільки
+// саме по ньому спожито. Без цього вкладка «Угоди» приписувала кожному договору
+// всю кількість картки (кейс Фібрига: 475 і 2212 по 10, а показувало 20 і 200%).
+const supTenders=allTI.filter(t=>t.s===sup).map(t=>{
+  const c=Object.assign({},t);
+  if(factual){c.consumed=Math.min(factual.get(t)||0,t.cq);c.byLots=true}
+  return c;
+});
 if(!supTenders.length)continue;
+if(!factual){
+  // Номерів угод немає — ділимо кількість постачальника між його договорами від старшого
+  let left=supQty;
+  const ord=[...supTenders].sort((a,b)=>{const da=cDate(a.c),db=cDate(b.c);return (da[0]-db[0])||(da[1]-db[1])||(da[2]-db[2])});
+  ord.forEach((t,idx)=>{const take=idx===ord.length-1?left:Math.min(left,t.cq);t.consumed=Math.max(0,take);left-=t.consumed});
+}
 const stq=supTenders.reduce((s,t)=>s+t.cq,0);
 const srem=Math.max(0,stq-supQty);
 const spct=stq>0?Math.round(supQty/stq*1000)/10:0;
