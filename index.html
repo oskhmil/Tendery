@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 124;
+const APP_VERSION = 125;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1422,7 +1422,12 @@ let tInfo=allTI;
 // внесення, тож перебивати ним факт означало б рахувати за застарілими даними.
 const ovApp=isMulti?_ovGet(ordersAllocOverride,p.name):null;
 const ovSheet=isMulti?_ovGet(ov,p.name):null;
-const ovManual=ovApp||(factual?null:ovSheet);
+// Правило: розподіл між угодами — тільки за номером угоди в накладній. Якщо накладні
+// визначають розподіл, жоден ручний (ні з застосунку, ні з листа) його не перебиває:
+// інакше товар списується на договір, за яким він не заходив. Ручний розподіл діє
+// лише там, де номерів угод у накладних немає.
+const ovManual=factual?null:(ovApp||ovSheet);
+const allocSrc=factual?"накладні":(ovApp?"застосунок":(ovSheet?"лист":null));
 // Якщо накладні однозначно кажуть, скільки взято в кожного постачальника, розподіл
 // не треба задавати руками — він уже відомий з номерів договорів. Ручний розподіл
 // (твій або з листа «Розподіл») має пріоритет і автоматику не пускає.
@@ -1518,7 +1523,7 @@ const sme=scs?Math.max(1,Math.round((sNow-scs)/(1e3*60*60*24*30.44)*10)/10):3;
 const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/10:999):0;
 let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
 if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
-results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,
+results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,allocSrc:allocSrc,
 realQty:p.qty,totalAlloc,allocMissing,allocExcess});
 }
 // Постачальник у тендерах є, але немає в effective
@@ -1529,7 +1534,7 @@ if(!supTenders.length)continue;
 const stq=supTenders.reduce((s,t)=>s+t.cq,0);
 let sdu=p.unit,sdtq=stq;
 if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
-results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,
+results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,allocSrc:allocSrc,
 realQty:p.qty,totalAlloc,allocMissing,allocExcess});
 }
 }else{
@@ -2003,7 +2008,7 @@ if(_sh)h+=`<div class="chosen-hint" style="color:#93c5fd">📊 По цій уг�
 if(d.multi&&!d.alloc){
 h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено між постачальниками</div><button class="alloc-apply" style="width:100%" onclick="event.stopPropagation();openAllocDialog(${idx})">✎ Розподілити</button></div>`}
 if(d.multi&&d.alloc){
-h+=`<div class="supplier-pick"><div class="title">${d.allocAuto?"🧾 Розподілено за накладними:":"✓ Розподілено (лист \"Розподіл\"):"}</div>`;
+h+=`<div class="supplier-pick"><div class="title">${d.allocAuto?"🧾 Розподілено за накладними:":(d.allocSrc==="застосунок"?"✓ Розподілено вручну (застосунок):":"✓ Розподілено (лист \"Розподіл\"):")}</div>`;
 if(d.allocAuto)h+=`<div style="font-size:10px;color:var(--muted);margin:-2px 0 4px">Визначено з номерів договорів у документах 1С. Щоб задати вручну — «✎ Змінити розподіл» нижче.</div>`;
 d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
 if(d.allocMissing>0){
