@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 127;
+const APP_VERSION = 128;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1513,11 +1513,20 @@ const allocExcess=Math.max(0,totalAlloc-p.qty);
 // Розподіл за накладними: нерозподілене — це НЕ «застарілий лист Розподіл», а партії,
 // номер договору яких не збігся з жодною угодою препарату (або його немає), чи обсяг
 // понад кількість в угоді. Збираємо їх, щоб показати конкретні накладні.
-let allocUnlinked=null,allocOverCap=0;
+let allocUnlinked=null,allocOverCap=0,allocOverList=null;
 if(allocAuto){
   allocUnlinked=(purchaseLots[p.name]||[]).filter(l=>!lotTender(l,allTI))
     .map(l=>({doc:l.doc,num:l.num,cdate:l.cdate,qty:l.qty||0,wh:l.wh}));
-  for(const sup of allocSups)allocOverCap+=Math.max(0,(ovEntry[sup]||0)-(supCapacity[sup]||0));
+  allocOverList=[];
+  for(const sup of allocSups){
+    const over=Math.max(0,(ovEntry[sup]||0)-(supCapacity[sup]||0));
+    if(over<=0)continue;
+    allocOverCap+=over;
+    const supT=allTI.filter(t=>t.s===sup);
+    const lots=(purchaseLots[p.name]||[]).filter(l=>supT.includes(lotTender(l,allTI)))
+      .map(l=>({doc:l.doc,num:l.num,cdate:l.cdate,qty:l.qty||0,wh:l.wh}));
+    allocOverList.push({s:sup,got:ovEntry[sup]||0,cap:supCapacity[sup]||0,over,cons:[...new Set(supT.map(t=>t.c))],lots});
+  }
 }
 // Окрема картка для кожного постачальника з ефективною кількістю
 for(const sup of Object.keys(effective)){
@@ -1547,7 +1556,7 @@ const smr=supQty>0?supQty/sme:0;const sml=stq>0?(smr>0?Math.round(srem/smr*10)/1
 let sdu=p.unit,sdpq=supQty,sdtq=stq,sdrem=srem;
 if(supTenders.length&&supTenders[0].pk>1){const pk=supTenders[0].pk;sdu=supTenders[0].tu;sdpq=Math.round(supQty/pk*100)/100;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0);sdrem=Math.round(srem/pk*100)/100}
 results.push({n:p.name,u:p.unit,du:sdu,pq:supQty,dpq:sdpq,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:srem,drem:sdrem,pct:spct,ml:sml,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,allocSrc:allocSrc,
-realQty:p.qty,totalAlloc,allocMissing,allocExcess,allocUnlinked,allocOverCap});
+realQty:p.qty,totalAlloc,allocMissing,allocExcess,allocUnlinked,allocOverCap,allocOverList});
 }
 // Постачальник у тендерах є, але немає в effective
 for(const sup of uSup){
@@ -1558,7 +1567,7 @@ const stq=supTenders.reduce((s,t)=>s+t.cq,0);
 let sdu=p.unit,sdtq=stq;
 if(supTenders.length&&supTenders[0].pk>1){sdu=supTenders[0].tu;sdtq=supTenders.reduce((ss,t)=>ss+t.tq,0)}
 results.push({n:p.name,u:p.unit,du:sdu,pq:0,dpq:0,ps:0,t:supTenders,tq:stq,dtq:sdtq,rem:stq,drem:sdtq,pct:0,ml:999,multi:uSup,allM:allTI,chosen:ovEntry,alloc:effective,allocAuto:allocAuto,allocSrc:allocSrc,
-realQty:p.qty,totalAlloc,allocMissing,allocExcess,allocUnlinked,allocOverCap});
+realQty:p.qty,totalAlloc,allocMissing,allocExcess,allocUnlinked,allocOverCap,allocOverList});
 }
 }else{
 const tq=tInfo.reduce((s,t)=>s+t.cq,0);
@@ -2015,7 +2024,7 @@ if(d.alloc&&d.t.length){
   const _tot=Object.values(d.alloc).reduce((a,b)=>a+(b||0),0);
   h+=`<div class="chosen-hint" style="color:#a78bfa">📦 частка: <strong>${esc(_s)}</strong>${d.pq>0?` — ${fmt(d.pq)} з ${fmt(_tot)} ${esc(d.u)} закуплених`:` — 0, усе списано на інших`}</div>`;
 }
-if(d.allocMissing>0)h+=`<div class="chosen-hint" style="color:#fbbf24">⚠ Не розподілено: ${fmt(d.allocMissing)} ${esc(d.u)} (закуплено ${fmt(d.realQty)}, ${d.allocAuto?"за накладними прив'язано":"у Розподілі"} ${fmt(d.totalAlloc)})</div>`;
+if(d.allocMissing>0)h+=`<div class="chosen-hint" style="color:#fbbf24">⚠ ${d.allocAuto&&!(d.allocUnlinked||[]).length&&d.allocOverCap>=d.allocMissing?"Понад угоду":"Не розподілено"}: ${fmt(d.allocMissing)} ${esc(d.u)} (закуплено ${fmt(d.realQty)}, ${d.allocAuto?"за накладними прив'язано":"у Розподілі"} ${fmt(d.totalAlloc)})</div>`;
 if(d.allocExcess>0)h+=`<div class="chosen-hint" style="color:#fca5a5">⚠ У Розподілі забагато: ${fmt(d.allocExcess)} ${esc(d.u)} (закуплено лише ${fmt(d.realQty)})</div>`;
 h+=`</div><div class="card-qty"><div class="num">${fmt(d.dpq)}</div><div class="unit">${esc(d.du)}</div></div></div></div>`;
 if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${d.pct}%</span></div>`;
@@ -2035,15 +2044,19 @@ h+=`<div class="supplier-pick"><div class="title">${d.allocAuto?"🧾 Розпо
 if(d.allocAuto)h+=`<div style="font-size:10px;color:var(--muted);margin:-2px 0 4px">Визначено з номерів договорів у накладних 1С — лист «Розподіл» тут не використовується.</div>`;
 d.multi.forEach(sup=>{const v=d.alloc[sup]||0;if(v>0)h+=`<div class="alloc-row"><span class="sup-name">${esc(sup)}</span><span style="color:var(--accent);font-weight:600">${fmt(v)} ${esc(d.u)}</span></div>`});
 if(d.allocMissing>0){
-h+=`<div class="alloc-row" style="border-top:1px dashed rgba(245,158,11,.4);margin-top:4px;padding-top:4px"><span class="sup-name" style="color:#fbbf24">⚠ Не розподілено</span><span style="color:#fbbf24;font-weight:600">${fmt(d.allocMissing)} ${esc(d.u)}</span></div>`;
+h+=`<div class="alloc-row" style="border-top:1px dashed rgba(245,158,11,.4);margin-top:4px;padding-top:4px"><span class="sup-name" style="color:#fbbf24">${d.allocAuto&&!(d.allocUnlinked||[]).length&&d.allocOverCap>=d.allocMissing?"⚠ Понад угоду":"⚠ Не розподілено"}</span><span style="color:#fbbf24;font-weight:600">${fmt(d.allocMissing)} ${esc(d.u)}</span></div>`;
 if(d.allocAuto){
-h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">Закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, за номерами договорів у накладних прив'язано <strong>${fmt(d.totalAlloc)}</strong>. Решту не можна списати на угоду, бо накладна каже інше:`;
+h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">Закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, за номерами договорів у накладних прив'язано <strong>${fmt(d.totalAlloc)}</strong>. ${(d.allocUnlinked||[]).length?"Решту не можна списати на угоду, бо накладна каже інше:":""}`;
 const _ul=d.allocUnlinked||[];
 _ul.forEach(l=>{h+=`<div style="margin-top:4px;padding:3px 0 3px 8px;border-left:2px solid rgba(251,191,36,.5);color:var(--text)">🧾 ${esc(String(l.doc||"").slice(0,90))}<br><span style="color:var(--muted)">договір: </span><strong>${l.num!=null?esc(String(l.num))+(l.cdate?" від "+esc(l.cdate):""):"не вказано в накладній"}</strong> · <strong>${fmt(l.qty)} ${esc(d.u)}</strong>${l.wh?` · <span style="color:var(--muted)">${esc(String(l.wh).slice(0,40))}</span>`:""}</div>`});
-if(d.allocOverCap>0)h+=`<div style="margin-top:4px;color:var(--text)">📈 Понад кількість в угоді: <strong>${fmt(d.allocOverCap)} ${esc(d.u)}</strong></div>`;
+(d.allocOverList||[]).forEach(o=>{
+h+=`<div style="margin-top:6px;color:var(--text)">📈 <strong>${esc(o.s)}</strong>: за накладними по ${esc(o.cons.map(c=>String(c).slice(0,40)).join("; "))} прийшло <strong>${fmt(o.got)}</strong> ${esc(d.u)}, а в угоді <strong>${fmt(o.cap)}</strong> — <strong style="color:#fca5a5">${fmt(o.over)} ${esc(d.u)} понад угоду</strong>.</div>`;
+o.lots.forEach(l=>{h+=`<div style="margin-top:2px;padding:2px 0 2px 8px;border-left:2px solid rgba(251,191,36,.5);color:var(--text)">🧾 ${esc(String(l.doc||"").slice(0,90))} · <strong>${fmt(l.qty)} ${esc(d.u)}</strong>${l.wh?` · <span style="color:var(--muted)">${esc(String(l.wh).slice(0,40))}</span>`:""}</div>`});
+h+=`<div style="margin-top:3px;color:var(--muted)">Перевір: чи не помилка кількості/номенклатури в накладній 1С, або чи є додаткова угода на збільшення — тоді внеси нову кількість у лист тендерів.</div>`;
+});
 const _rest=Math.max(0,d.allocMissing-_ul.reduce((a,l)=>a+l.qty,0)-(d.allocOverCap||0));
 if(_rest>0)h+=`<div style="margin-top:4px;color:var(--text)">❔ Без накладної-партії у вивантаженні: <strong>${fmt(_rest)} ${esc(d.u)}</strong></div>`;
-h+=`<div style="margin-top:4px;color:var(--muted)">${_ul.some(l=>l.num==null)?"Номера договору немає — перевір реквізити накладної в 1С. ":""}${_ul.some(l=>l.num!=null)?"Номер не збігається з угодами цього препарату — це закупівля поза тендером або номер у листі тендерів записано інакше.":""}</div></div>`;
+h+=`<div style="margin-top:4px;color:var(--muted)">${!_ul.length?"":_ul.some(l=>l.num==null)?"Номера договору немає — перевір реквізити накладної в 1С. ":""}${_ul.some(l=>l.num!=null)?"Номер не збігається з угодами цього препарату — це закупівля поза тендером або номер у листі тендерів записано інакше.":""}</div></div>`;
 }else{
 h+=`<div style="margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;border-radius:6px;font-size:11px;color:#fbbf24">Реально закуплено <strong>${fmt(d.realQty)}</strong> ${esc(d.u)}, а у Розподілі вказано <strong>${fmt(d.totalAlloc)}</strong>. Онови лист «Розподіл» у файлі тендерів.</div>`;
 }
