@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 129;
+const APP_VERSION = 131;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -1588,7 +1588,7 @@ return results;
 }
 
 // ═══════ STATUS ═══════
-function gs(d){if(!d.t.length)return"none";if(d.pq===0&&d.tq>0)return"idle";if(d.rem<=0)return"exhausted";if(d.ml>0&&d.ml<3)return"critical";if(d.ml>=3&&d.ml<6)return"warning";return"ok"}
+function gs(d){if(!d.t.length)return"none";if(d.pq===0&&d.tq>0)return"idle";{const sh=_tenderShare(d);if(sh&&sh.cap>0&&sh.q>=sh.cap)return"exhausted"}if(d.rem<=0)return"exhausted";if(d.ml>0&&d.ml<3)return"critical";if(d.ml>=3&&d.ml<6)return"warning";return"ok"}
 const SO={exhausted:0,critical:1,warning:2,ok:3,idle:4,none:5};
 const BARC={exhausted:"#b91c1c",critical:"#f97316",warning:"#eab308",ok:"#10b981",idle:"#8b5cf6",none:"#888"};
 const SCOL={all:"var(--accent)",exhausted:"var(--danger)",critical:"var(--orange)",warning:"var(--warn)",ok:"var(--green)",idle:"var(--violet)",none:"var(--muted)"};
@@ -2002,11 +2002,15 @@ for(const[k,l]of[["status","Статус"],["name","Назва"],["months","Мі
 h+=`</div><span style="font-size:12px;color:var(--muted)">${items.length} поз.</span></div>`;
 if(!items.length)h+='<div class="empty-state">Нічого не знайдено</div>';
 else {window._monCards=items.map(x=>x.n);items.forEach((d,idx)=>{
-const s=gs(d),pct=Math.min(d.pct||0,100),ht=d.t.length>0,isExp=expandedCard===d.n;
+const s=gs(d),ht=d.t.length>0,isExp=expandedCard===d.n;
+// Угода, яку набирають кілька номенклатур 1С: смуга і % — по всій угоді, а не лише по цій назві,
+// інакше картка показувала 82,9% при реально вибраних 106,9%.
+const _shC=_tenderShare(d);const _pctShow=_shC&&_shC.cap>0?Math.round(_shC.q/_shC.cap*1000)/10:d.pct;
+const pct=Math.min(_pctShow||0,100);
 const hasConflict=d.multi&&!d.alloc&&!d.chosen;
 const mnn=d.t.length?d.t[0].mn:"";
 const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
-const mbT=s==="idle"?"Без руху":d.ml<=0?"Вичерпано":d.ml===999?"—":d.ml+" міс";
+const mbT=s==="idle"?"Без руху":(d.ml<=0||s==="exhausted")?"Вичерпано":d.ml===999?"—":d.ml+" міс";
 h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="toggleMonitorCard(${idx})">`;
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
@@ -2027,16 +2031,29 @@ if(d.alloc&&d.t.length){
 if(d.allocMissing>0)h+=`<div class="chosen-hint" style="color:#fbbf24">⚠ ${d.allocAuto&&!(d.allocUnlinked||[]).length&&d.allocOverCap>=d.allocMissing?"Понад угоду":"Не розподілено"}: ${fmt(d.allocMissing)} ${esc(d.u)} (закуплено ${fmt(d.realQty)}, ${d.allocAuto?"за накладними прив'язано":"у Розподілі"} ${fmt(d.totalAlloc)})</div>`;
 if(d.allocExcess>0)h+=`<div class="chosen-hint" style="color:#fca5a5">⚠ У Розподілі забагато: ${fmt(d.allocExcess)} ${esc(d.u)} (закуплено лише ${fmt(d.realQty)})</div>`;
 h+=`</div><div class="card-qty"><div class="num">${fmt(d.dpq)}</div><div class="unit">${esc(d.du)}</div></div></div></div>`;
-if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${d.pct}%</span></div>`;
+if(ht)h+=`<div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${BARC[s]}"></div></div><span class="bar-pct">${_pctShow}%${_shC?" угоди":""}</span></div>`;
 h+=`<div class="card-detail" onclick="event.stopPropagation()">`;
-h+=`<div class="detail-grid"><div class="mini-stat"><div class="lbl">Закуплено</div><div class="val">${fmt(d.dpq)} ${esc(d.du)}</div></div>`;
+h+=`<div class="detail-grid"><div class="mini-stat"><div class="lbl">Закуплено${_shC?" цією назвою":""}</div><div class="val">${fmt(d.dpq)} ${esc(d.du)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">По угоді</div><div class="val">${fmt(d.dtq)} ${esc(d.du)}</div></div>`;
 const _sh=_tenderShare(d);
 const _pk=(d.t[0]&&d.t[0].pk>1)?d.t[0].pk:1;
 const _shRem=_sh?Math.max(0,_sh.cap-_sh.q):null;
 h+=`<div class="mini-stat"><div class="lbl">Залишок${_sh?" по угоді":""}</div><div class="val" style="color:${(_sh?_shRem:d.rem)<=0?"var(--danger)":"var(--green)"}">${fmt(_sh?(_pk>1?Math.round(_shRem/_pk*100)/100:_shRem):d.drem)} ${esc(d.du)}</div></div>`;
 h+=`<div class="mini-stat"><div class="lbl">Прогноз</div><div class="val"><span class="badge" style="${mbC}">${mbT}</span></div></div></div>`;
-if(_sh)h+=`<div class="chosen-hint" style="color:#93c5fd">📊 По цій угоді разом: <strong>${fmt(_pk>1?Math.round(_sh.q/_pk*100)/100:_sh.q)}</strong> з ${fmt(_pk>1?Math.round(_sh.cap/_pk*100)/100:_sh.cap)} ${esc(d.du)} (${_sh.cap>0?Math.round(_sh.q/_sh.cap*1000)/10:0}%) — ${_sh.names.length} номенклатури 1С: ${esc(_sh.names.map(n=>n.slice(0,34)).join(" · ")).slice(0,150)}</div>`;
+if(_sh){
+const _tV=getVolumes(d.t[0].cn||"");
+const _tP=d.t[0]&&d.t[0].p>0?_tPriceUnit(d.t[0]):null;
+const _avgP=n=>{const ls=purchaseLots[n]||[];let q=0,sm=0;ls.forEach(l=>{if(l.qty>0&&l.sum>0){q+=l.qty;sm+=l.sum}});return q?sm/q:null};
+const _vf=n=>{const v=getVolumes(n);
+  const ap=_avgP(n),r=ap&&_tP?ap/_tP:null;
+  const pTxt=r&&(r>1.4||r<0.7)?` ⚠ціна ${fmt(Math.round(ap*100)/100)} грн замість ${fmt(Math.round(_tP*100)/100)} (×${(Math.round(r*10)/10)}) — схоже на інше фасування`:"";
+  if(!_tV.size)return pTxt;
+  if(!v.size)return " ❔об'єм не вказано"+pTxt;
+  return setsOverlap(v,_tV)?pTxt:` ⚠${[...v].join("/")} мл ≠ ${[..._tV].join("/")} мл`};
+const _rowQ=n=>{const r=allData.find(x=>x.n===n);if(!r)return null;const x=r.t.find(t=>d.t.some(u=>u.s===t.s&&u.c===t.c&&cnKey(u.cn)===cnKey(t.cn)));return x&&typeof x.consumed==="number"?x.consumed:r.pq};
+h+=`<div class="chosen-hint" style="color:#93c5fd;margin-bottom:6px">📊 <strong>По цій угоді разом вибрано ${fmt(_pk>1?Math.round(_sh.q/_pk*100)/100:_sh.q)}</strong> з ${fmt(_pk>1?Math.round(_sh.cap/_pk*100)/100:_sh.cap)} ${esc(d.du)} (${_sh.cap>0?Math.round(_sh.q/_sh.cap*1000)/10:0}%) — угоду набирають ${_sh.names.length} номенклатури 1С:`;
+_sh.names.forEach(n=>{const q=_rowQ(n);const f=_vf(n);h+=`<div style="padding-left:8px;${/⚠/.test(f)?"color:#fca5a5;font-weight:600":/❔/.test(f)?"color:#fbbf24":"color:var(--text)"}">• ${esc(n)}${q!=null?`: <strong>${fmt(_pk>1?Math.round(q/_pk*100)/100:q)}</strong>`:""}${n===d.n?" ← ця картка":""}${esc(f)}</div>`});
+h+=`</div>`;}
 if(d.multi&&!d.alloc){
 h+=`<div class="supplier-pick"><div class="title">⚡ Не розподілено між постачальниками</div><button class="alloc-apply" style="width:100%" onclick="event.stopPropagation();openAllocDialog(${idx})">✎ Розподілити</button></div>`}
 if(d.multi&&d.alloc){
@@ -4922,6 +4939,9 @@ function _numEqLoose(a,b){
   return !!A&&A===B;
 }
 // Знаходить тендерну позицію, до якої належить партія
+function _lotUnitPrice(l){return l&&l.qty>0&&l.sum>0?l.sum/l.qty:null}
+// ціна угоди в одиницях закупки (якщо угода в упаковках, а закупка поштучно — ділимо на pk)
+function _tPriceUnit(t){return t.pk>1?t.p/t.pk:t.p}
 function lotTender(lot,tenders){
   if(!lot||!tenders||!tenders.length)return null;
   let byNum=tenders.filter(t=>_numEq(_cNum(t.c),lot.num));
@@ -4931,7 +4951,14 @@ function lotTender(lot,tenders){
     const y=lot.cdate.slice(6);
     const byY=byNum.filter(t=>String(t.c).includes(y)||String(t.c).includes(y.slice(2)));
     if(byY.length===1)return byY[0];
+    if(byY.length>1)byNum=byY;
   }
+  // В одному договорі кілька позицій препарату (50 мл і 100 мл), а в назві 1С фасування
+  // не дописане: тоді позицію визначаємо за ціною одиниці в накладній — найближча до ціни угоди.
+  if(byNum.length>1){const up=_lotUnitPrice(lot);if(up){
+    const pr=byNum.filter(t=>t.p>0);
+    if(pr.length){pr.sort((a,b)=>Math.abs(Math.log(_tPriceUnit(a)/up))-Math.abs(Math.log(_tPriceUnit(b)/up)));return pr[0]}
+  }}
   return byNum.length?byNum[0]:null;
 }
 function lotLinkUI(){
