@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 128;
+const APP_VERSION = 129;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2140,13 +2140,20 @@ const consRaw=pms.reduce((s,d)=>{
 },0);
 const consInTU=pk>1?Math.round(consRaw/pk*100)/100:consRaw;const cap=tc?tc.cq:it.qty*(pk>1?pk:1);const remRaw=cap-consRaw;const remInTU=pk>1?Math.round(remRaw/pk*100)/100:remRaw;
 consDisp=consInTU;remDisp=remInTU;pctDisp=cap>0?Math.round(consRaw/cap*1000)/10:pm.pct;if(pk>1)dispUnit=it.unit;
-if(pms.length>1)consParts=pms.map(d=>`${d.n.slice(0,42)}: ${fmt(pk>1?Math.round(d.pq/pk*100)/100:d.pq)}`);}
+// Повні назви + перевірка об'єму: назву раніше різало на 42 символах — якраз там, де
+// в 1С стоїть фасування (50 мл / 100 мл), і не було видно, що сюди потрапило.
+const _tV=getVolumes(it.commercial);
+const _volFlag=d=>{const v=getVolumes(d.n);const ml=ordersManualLink[d.n]?" 🔗вручну":"";
+  if(!_tV.size)return ml;
+  if(!v.size)return " ❔об'єм не вказано"+ml;
+  return setsOverlap(v,_tV)?ml:` ⚠${[...v].join("/")} мл ≠ ${[..._tV].join("/")} мл`+ml};
+if(pms.length>1||pms.some(d=>_volFlag(d)))consParts=pms.map(d=>`${d.n.slice(0,110)}: ${fmt(pk>1?Math.round(d.pq/pk*100)/100:d.pq)}${_volFlag(d)}`);}
 h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
 h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
 h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
 if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
 if(consDisp!=null){h+=`<div class="row"><span>Вибрано:</span><strong style="color:${remDisp<=0?"var(--danger)":"var(--green)"}">${fmt(consDisp)} (зал: ${fmt(remDisp)})</strong></div>`;if(pctDisp!=null)h+=`<div class="row"><span>Вибірка:</span><strong style="color:${pctDisp>=100?"var(--danger)":pctDisp>=80?"var(--warn)":"var(--green)"}">${pctDisp}%</strong></div>`;
-if(consParts)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">складається з: ${esc(consParts.join(" · "))}</div>`;}
+if(consParts)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">складається з:${consParts.map(x=>`<div style="padding-left:6px;${/⚠/.test(x)?"color:#fca5a5;font-weight:600":/❔/.test(x)?"color:#fbbf24":""}">• ${esc(x)}</div>`).join("")}</div>`;}
 else h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">Не знайдено в закупівлях</div>`;
 h+=`</div>`;
 });
