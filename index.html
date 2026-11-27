@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 134;
+const APP_VERSION = 135;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -358,6 +358,7 @@ let ordersHorizon=30;                  // days to cover
 let ordersExhaustedOpen=false;         // розгорнутий список вичерпаних угод
 let ordersSupplierChoice={};           // {drugName: "supplierName"}
 let ordersAllocOverride={};            // {purchaseName: {supplier: qty}} — розподіл приходу, заданий у застосунку
+let agrClosed={};                      // {"постачальник|||договір": {ts, note}} — угода закрита вручну
 let ordersManualLink={};               // {purchaseName: {s,c,cn}} — ручна прив'язка закупки до тендерної позиції
 let linkDialogFor=null;                // назва закупки, для якої відкрито діалог прив'язки
 let linkQuery="";
@@ -864,11 +865,11 @@ let _manualMigrated=false;
 let ordersPending={};
 
 // ── Sync metadata: per-item timestamps + tombstones for merge-based cloud sync ──
-let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}};
-let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}};
+let _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{},agrclosed:{}};
+let _syncSnap={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{},agrclosed:{}};
 let _manualTs=0;
-const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice,allocov:()=>ordersAllocOverride,mlink:()=>ordersManualLink};
-const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice",allocov:"_allocov",mlink:"_mlink"};
+const _SYNC_GET={ven:()=>venCategories,pending:()=>ordersPending,qty:()=>ordersQtyOverride,excluded:()=>ordersExcluded,hidden:()=>ordersHidden,supChoice:()=>ordersSupplierChoice,allocov:()=>ordersAllocOverride,mlink:()=>ordersManualLink,agrclosed:()=>agrClosed};
+const _SYNC_SUFFIX={ven:"_ven",pending:"_pending",qty:"_qty",excluded:"_excluded",hidden:"_hidden",supChoice:"_supchoice",allocov:"_allocov",mlink:"_mlink",agrclosed:"_agrclosed"};
 
 
 // Manual-add dialog state
@@ -2084,7 +2085,7 @@ if(!d.allocAuto)h+=`<button class="alloc-apply" style="width:100%;margin-top:6px
 h+=`</div>`}
 h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
 d.t.forEach(t=>{
-  h+=`<div class="tender-card"><div class="sup">${esc(t.s)}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;
+  h+=`<div class="tender-card" style="${isAgrClosed(t.s,t.c)?"opacity:.6;border-left-color:var(--muted)":""}"><div class="sup">${esc(t.s)}${isAgrClosed(t.s,t.c)?` <span style="font-size:10px;color:var(--muted);font-weight:400">🔒 закрито вручну</span>`:""}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;
   if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;
   h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;
   // Per-tender consumption breakdown (only if cascading populated consumed)
@@ -2138,6 +2139,18 @@ function agrItemStat(a,it){
 }
 let expandedAgrSup=null;
 function toggleAgrSup(i){const s=(window._agrSups||[])[i];if(!s)return;expandedAgrSup=expandedAgrSup===s?null:s;expandedAgr=null;render()}
+function toggleAgrClosed(i){
+  if(event)event.stopPropagation();
+  const a=(window._agrList||[])[i];if(!a)return;
+  const k=a.supplier+"|||"+a.contract;
+  if(agrClosed[k]){delete agrClosed[k]}
+  else{
+    const note=prompt("Закрити угоду вручну:\n"+a.supplier+" — "+a.contract+"\n\nПричина (необов'язково):","");
+    if(note===null)return;
+    agrClosed[k]={ts:new Date().toISOString(),note:String(note).trim().slice(0,200)};
+  }
+  saveAgrClosed();render();
+}
 function toggleAgr(i){const a=(window._agrList||[])[i];if(!a)return;const k=a.supplier+"|||"+a.contract;expandedAgr=expandedAgr===k?null:k;render()}
 const DIM_STYLE="opacity:.6";
 function renderAgreements(el){
@@ -2154,7 +2167,7 @@ else if(searchMode==="contract")arr=arr.filter(a=>multiMatch(a.contract,w));
 arr.forEach(a=>{
   let c=0,cap=0,full=a.items.length>0;
   a.items.forEach(it=>{const st=agrItemStat(a,it);c+=st.cons;cap+=st.cap;if(!st.found||st.cons<st.cap)full=false});
-  a.pct=cap>0?Math.round(c/cap*1000)/10:0;a.full=full;a.expired=agrExpired(a.contract);a.inactive=a.full||a.expired;
+  a.pct=cap>0?Math.round(c/cap*1000)/10:0;a.full=full;a.expired=agrExpired(a.contract);a.closed=isAgrClosed(a.supplier,a.contract);a.inactive=a.full||a.expired||a.closed;
   a.end=_agrEndTxt(a.contract);a.endGiven=agrEndDate(a.contract).given;
   a.tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
 });
@@ -2177,12 +2190,14 @@ h+=`<div onclick="event.stopPropagation()" style="margin-top:8px;padding-left:12
 list.forEach(a=>{
 const ai=window._agrList.length;window._agrList.push(a);
 const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
-const tag=a.full?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">✓ вибрано повністю</span>`:a.expired?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">⌛ термін сплив</span>`:"";
+const tag=a.closed?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">🔒 закрито вручну</span>`:a.full?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">✓ вибрано повністю</span>`:a.expired?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">⌛ термін сплив</span>`:"";
 h+=`<div class="agr-card${isE?" expanded":""}" style="background:rgba(255,255,255,.03)" onclick="toggleAgr(${ai})"><div style="${a.inactive?DIM_STYLE:""}">`;
 h+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div class="agr-con" style="flex:1;font-size:13px;color:${a.inactive?"var(--muted)":"var(--text)"};font-weight:600">${hl(a.contract,searchMode==="contract"?q:"")}</div>${tag}</div>`;
 h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${a.tv>0?`<span>Сума: <strong>${fmt(Math.round(a.tv))} грн</strong></span>`:""}<span>Вибрано: <strong style="color:${a.pct>=100?"var(--danger)":a.pct>=80?"var(--warn)":"var(--green)"}">${a.pct}%</strong></span><span>Діє до: <strong>${a.end}</strong>${a.endGiven?"":" <span style=\"font-size:10px\">(за замовч.)</span>"}</span></div></div>`;
 if(isE){
 h+=`<div class="agr-detail" style="display:block" onclick="event.stopPropagation()">`;
+if(a.closed){const cl=agrClosed[a.supplier+"|||"+a.contract];h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.05);font-size:11px;color:var(--muted)"><span style="flex:1">🔒 Закрито вручну${cl&&cl.ts?" "+new Date(cl.ts).toLocaleDateString("uk-UA"):""}${cl&&cl.note?` — ${esc(cl.note)}`:""}. Залишок по ній не враховується в замовленнях.</span><button class="sort-btn" style="font-size:11px" onclick="toggleAgrClosed(${ai})">🔓 Відкрити</button></div>`}
+else if(!a.full)h+=`<button class="sort-btn" style="font-size:11px;margin-bottom:8px" onclick="toggleAgrClosed(${ai})" title="Позначити угоду закритою, навіть якщо вибрано не 100% (неправильні кількості, розірвання тощо)">🔒 Закрити угоду вручну</button>`;
 a.items.forEach(it=>{
 // Одна тендерна позиція часто набирається кількома назвами з 1С (скляні + пластикові
 // пляшки, різні написання). Раніше тут стояв .find() і рахувалась ЛИШЕ ПЕРША назва,
@@ -2544,6 +2559,7 @@ function loadVen(){
   const ao=loadKey("_allocov");if(ao)ordersAllocOverride=ao||{};
   const ai=loadKey("_allocign");if(ai)allocIgnoreSheet=ai||{};
   const ml=loadKey("_mlink");if(ml)ordersManualLink=ml||{};
+  const ac=loadKey("_agrclosed");if(ac)agrClosed=ac||{};
   loadSyncMeta();
 }
 function saveManual(){_manualTs=Date.now();try{localStorage.setItem(USER_KEY+"_manual",JSON.stringify(ordersManual))}catch(e){}saveSyncMeta();syncPushSoon()}
@@ -2551,6 +2567,8 @@ function savePending(){stampCat("pending");try{localStorage.setItem(USER_KEY+"_p
 function saveQtyOverride(){stampCat("qty");try{localStorage.setItem(USER_KEY+"_qty",JSON.stringify(ordersQtyOverride))}catch(e){}syncPushSoon()}
 function saveExcluded(){stampCat("excluded");try{localStorage.setItem(USER_KEY+"_excluded",JSON.stringify(ordersExcluded))}catch(e){}syncPushSoon()}
 function saveHidden(){stampCat("hidden");try{localStorage.setItem(USER_KEY+"_hidden",JSON.stringify(ordersHidden))}catch(e){}syncPushSoon()}
+function saveAgrClosed(){stampCat("agrclosed");try{localStorage.setItem(USER_KEY+"_agrclosed",JSON.stringify(agrClosed))}catch(e){}syncPushSoon()}
+function isAgrClosed(sup,con){return !!agrClosed[sup+"|||"+(con||"")]}
 function saveManualLink(){stampCat("mlink");try{localStorage.setItem(USER_KEY+"_mlink",JSON.stringify(ordersManualLink))}catch(e){}syncPushSoon()}
 function saveAllocOverride(){stampCat("allocov");try{localStorage.setItem(USER_KEY+"_allocov",JSON.stringify(ordersAllocOverride))}catch(e){}syncPushSoon()}
 function saveSupplierChoice(){stampCat("supChoice");try{localStorage.setItem(USER_KEY+"_supchoice",JSON.stringify(ordersSupplierChoice))}catch(e){}syncPushSoon()}
@@ -2558,12 +2576,12 @@ function saveSupplierChoice(){stampCat("supChoice");try{localStorage.setItem(USE
 // ═══════ CLOUD SYNC ═══════
 // ── Merge-based sync helpers (LWW per item + tombstones) ──
 function _syncClone(o){try{return JSON.parse(JSON.stringify(o||{}))}catch(e){return{}}}
-function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;else if(cat==="allocov")ordersAllocOverride=m;else if(cat==="mlink")ordersManualLink=m;}
+function _syncSetCat(cat,m){if(cat==="ven")venCategories=m;else if(cat==="pending")ordersPending=m;else if(cat==="qty")ordersQtyOverride=m;else if(cat==="excluded")ordersExcluded=m;else if(cat==="hidden")ordersHidden=m;else if(cat==="supChoice")ordersSupplierChoice=m;else if(cat==="allocov")ordersAllocOverride=m;else if(cat==="mlink")ordersManualLink=m;else if(cat==="agrclosed")agrClosed=m;}
 function _syncPersistCat(cat){try{localStorage.setItem(USER_KEY+_SYNC_SUFFIX[cat],JSON.stringify(_SYNC_GET[cat]()))}catch(e){}}
 function saveSyncMeta(){try{localStorage.setItem(USER_KEY+"_meta",JSON.stringify({meta:_syncMeta,snap:_syncSnap,manualTs:_manualTs}))}catch(e){}}
 function loadSyncMeta(){
   let loaded=false;
-  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
+  try{const s=localStorage.getItem(USER_KEY+"_meta");if(s){const o=JSON.parse(s);if(o){loaded=true;if(o.meta&&typeof o.meta==="object")_syncMeta=Object.assign({ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{},agrclosed:{}},o.meta);if(o.snap&&typeof o.snap==="object")_syncSnap=o.snap;if(typeof o.manualTs==="number")_manualTs=o.manualTs;}}}catch(e){}
   // Baseline snapshot = current loaded maps, so the first local diff is computed correctly.
   // When no stored meta (first run / migration), reset every snapshot to the loaded map.
   for(const cat of Object.keys(_SYNC_GET)){
@@ -2607,6 +2625,7 @@ function collectUserState(){
     supChoice: ordersSupplierChoice||{},
     allocov: ordersAllocOverride||{},
     mlink: ordersManualLink||{},
+    agrclosed: agrClosed||{},
     _meta: Object.assign({},_syncMeta,{manualTs:_manualTs}),
     _localTs: Date.now()
   };
@@ -2712,7 +2731,7 @@ function syncMenu(){
 async function syncRepair(){
   const ok=confirm("Скинути мітки синхронізації цього пристрою і злити стан з хмарою заново?\n\nПозиції, які є в хмарі, повернуться на цей пристрій. Локальні дані інших застосунків не зачіпаються.");
   if(!ok)return;
-  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{}};
+  _syncMeta={ven:{},pending:{},qty:{},excluded:{},hidden:{},supChoice:{},allocov:{},mlink:{},agrclosed:{}};
   _syncSnap={};
   for(const cat of Object.keys(_SYNC_GET))_syncSnap[cat]=_syncClone(_SYNC_GET[cat]());
   _manualTs=0;
@@ -2894,8 +2913,13 @@ _cqBySup[t.s]=(_cqBySup[t.s]||0)+(t.cq||t.tq);
 // (rem), інакше вичерпаний постачальник виглядав би вільним. Для нерозподілених multi
 // залишок невідомий, тому беремо повний обсяг угоди, як і раніше.
 for(const _sn of Object.keys(_cqBySup)){
-if(_unalloc)bySup[_sn].tenderRemaining+=_cqBySup[_sn];
-else bySup[_sn].tenderRemaining+=Math.max(0,_row.rem||0);
+// Угоди, закриті вручну, ємності не дають: їхній невибраний залишок не замовляємо.
+const _supT=_row.t.filter(t=>t.s===_sn);
+const _cl=_supT.filter(t=>isAgrClosed(t.s,t.c));
+if(_cl.length&&_cl.length===_supT.length)continue;
+const _clFree=_cl.reduce((a,t)=>a+Math.max(0,(t.cq||t.tq)-(typeof t.consumed==="number"?t.consumed:0)),0);
+if(_unalloc)bySup[_sn].tenderRemaining+=Math.max(0,_cqBySup[_sn]-_cl.reduce((a,t)=>a+(t.cq||t.tq),0));
+else bySup[_sn].tenderRemaining+=Math.max(0,(_row.rem||0)-_clFree);
 }
 }
 for(const s of Object.values(bySup))delete s._seen;
