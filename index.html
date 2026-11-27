@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 133;
+const APP_VERSION = 134;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2011,7 +2011,7 @@ const hasConflict=d.multi&&!d.alloc&&!d.chosen;
 const mnn=d.t.length?d.t[0].mn:"";
 const mbC={idle:"background:rgba(139,92,246,.15);color:#a78bfa",exhausted:"background:rgba(239,68,68,.15);color:#f87171",critical:"background:rgba(249,115,22,.15);color:#fb923c",warning:"background:rgba(245,158,11,.15);color:#fbbf24",ok:"background:rgba(16,185,129,.15);color:#34d399",none:"background:var(--card2);color:var(--muted)"}[s];
 const mbT=s==="idle"?"Без руху":(d.ml<=0||s==="exhausted")?"Вичерпано":d.ml===999?"—":d.ml+" міс";
-h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="toggleMonitorCard(${idx})">`;
+h+=`<div class="card${hasConflict?" conflict":""}${isExp?" expanded":""}" onclick="toggleMonitorCard(${idx})" style="${s==="exhausted"&&!isExp?DIM_STYLE:""}">`;
 h+=`<div class="card-head"><div class="card-top">`;
 h+=`<svg class="pill-ico" viewBox="0 0 28 28" fill="none" stroke="#94a3b8" stroke-width="1.3"><rect x="4" y="8" width="20" height="12" rx="6" stroke-linejoin="round"/><line x1="14" y1="8" x2="14" y2="20"/><circle cx="9" cy="14" r="1.5" fill="#94a3b8" stroke="none"/></svg>`;
 h+=`<div class="card-info"><div class="drug-name">${hl(d.n,searchMode==="name"?q:"")}</div>`;
@@ -2139,6 +2139,7 @@ function agrItemStat(a,it){
 let expandedAgrSup=null;
 function toggleAgrSup(i){const s=(window._agrSups||[])[i];if(!s)return;expandedAgrSup=expandedAgrSup===s?null:s;expandedAgr=null;render()}
 function toggleAgr(i){const a=(window._agrList||[])[i];if(!a)return;const k=a.supplier+"|||"+a.contract;expandedAgr=expandedAgr===k?null:k;render()}
+const DIM_STYLE="opacity:.6";
 function renderAgreements(el){
 const q=getActiveSearch();
 let agrs={};allTenders.forEach(t=>{const k=t.supplier+"|||"+t.contract;if(!agrs[k])agrs[k]={supplier:t.supplier,contract:t.contract,items:[]};agrs[k].items.push(t)});
@@ -2168,18 +2169,18 @@ const act=list.filter(a=>!a.inactive).length;
 const sum=list.filter(a=>!a.inactive).reduce((s,a)=>s+a.tv,0);
 const open=autoOpen||expandedAgrSup===sup;
 const allInactive=act===0;
-h+=`<div class="agr-card${open?" expanded":""}" style="${allInactive?"opacity:.55;":""}" onclick="toggleAgrSup(${si})">`;
-h+=`<div style="display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:12px;width:12px">${open?"▾":"▸"}</span><div class="agr-sup" style="flex:1;${allInactive?"color:var(--muted)":""}">${hl(sup,searchMode==="supplier"?q:"")}</div></div>`;
-h+=`<div class="agr-meta" style="padding-left:20px"><span>Угод: <strong>${list.length}</strong>${act<list.length?` (активних <strong style="color:var(--accent)">${act}</strong>)`:""}</span>${sum>0?`<span>Сума активних: <strong>${fmt(Math.round(sum))} грн</strong></span>`:""}</div>`;
+h+=`<div class="agr-card${open?" expanded":""}" onclick="toggleAgrSup(${si})">`;
+h+=`<div style="display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:12px;width:12px">${open?"▾":"▸"}</span><div class="agr-sup" style="flex:1;${allInactive?"color:var(--muted);"+DIM_STYLE:""}">${hl(sup,searchMode==="supplier"?q:"")}</div></div>`;
+h+=`<div class="agr-meta" style="padding-left:20px;${allInactive?DIM_STYLE:""}"><span>Угод: <strong>${list.length}</strong>${act<list.length?` (активних <strong style="color:var(--accent)">${act}</strong>)`:""}</span>${sum>0?`<span>Сума активних: <strong>${fmt(Math.round(sum))} грн</strong></span>`:""}</div>`;
 if(open){
 h+=`<div onclick="event.stopPropagation()" style="margin-top:8px;padding-left:12px;border-left:2px solid var(--border)">`;
 list.forEach(a=>{
 const ai=window._agrList.length;window._agrList.push(a);
 const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
 const tag=a.full?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">✓ вибрано повністю</span>`:a.expired?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">⌛ термін сплив</span>`:"";
-h+=`<div class="agr-card${isE?" expanded":""}" style="${a.inactive?"opacity:.5;filter:grayscale(1);":""}background:rgba(255,255,255,.03)" onclick="toggleAgr(${ai})">`;
+h+=`<div class="agr-card${isE?" expanded":""}" style="background:rgba(255,255,255,.03)" onclick="toggleAgr(${ai})"><div style="${a.inactive?DIM_STYLE:""}">`;
 h+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div class="agr-con" style="flex:1;font-size:13px;color:${a.inactive?"var(--muted)":"var(--text)"};font-weight:600">${hl(a.contract,searchMode==="contract"?q:"")}</div>${tag}</div>`;
-h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${a.tv>0?`<span>Сума: <strong>${fmt(Math.round(a.tv))} грн</strong></span>`:""}<span>Вибрано: <strong style="color:${a.pct>=100?"var(--danger)":a.pct>=80?"var(--warn)":"var(--green)"}">${a.pct}%</strong></span><span>Діє до: <strong>${a.end}</strong>${a.endGiven?"":" <span style=\"font-size:10px\">(за замовч.)</span>"}</span></div>`;
+h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${a.tv>0?`<span>Сума: <strong>${fmt(Math.round(a.tv))} грн</strong></span>`:""}<span>Вибрано: <strong style="color:${a.pct>=100?"var(--danger)":a.pct>=80?"var(--warn)":"var(--green)"}">${a.pct}%</strong></span><span>Діє до: <strong>${a.end}</strong>${a.endGiven?"":" <span style=\"font-size:10px\">(за замовч.)</span>"}</span></div></div>`;
 if(isE){
 h+=`<div class="agr-detail" style="display:block" onclick="event.stopPropagation()">`;
 a.items.forEach(it=>{
@@ -2211,7 +2212,7 @@ const _volFlag=d=>{const v=getVolumes(d.n);const ml=ordersManualLink[d.n]?" 🔗
   return setsOverlap(v,_tV)?ml:` ⚠${[...v].join("/")} мл ≠ ${[..._tV].join("/")} мл`+ml};
 if(pms.length>1||pms.some(d=>_volFlag(d)))consParts=pms.map(d=>`${d.n.slice(0,110)}: ${fmt(pk>1?Math.round(d.pq/pk*100)/100:d.pq)}${_volFlag(d)}`);}
 const _itDone=remDisp!=null&&remDisp<=0; // позицію вибрано повністю — приглушуємо
-h+=`<div class="agr-item" style="${_itDone?"opacity:.45;filter:grayscale(1)":""}"><div class="name" style="${_itDone?"color:var(--muted)":""}">${_itDone?"✓ ":""}${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
+h+=`<div class="agr-item" style="${_itDone?DIM_STYLE:""}"><div class="name" style="${_itDone?"color:var(--muted)":""}">${_itDone?"✓ ":""}${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
 h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
 h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
 if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
