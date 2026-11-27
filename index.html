@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 132;
+const APP_VERSION = 133;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2210,7 +2210,8 @@ const _volFlag=d=>{const v=getVolumes(d.n);const ml=ordersManualLink[d.n]?" 🔗
   if(!v.size)return " ❔об'єм не вказано"+ml;
   return setsOverlap(v,_tV)?ml:` ⚠${[...v].join("/")} мл ≠ ${[..._tV].join("/")} мл`+ml};
 if(pms.length>1||pms.some(d=>_volFlag(d)))consParts=pms.map(d=>`${d.n.slice(0,110)}: ${fmt(pk>1?Math.round(d.pq/pk*100)/100:d.pq)}${_volFlag(d)}`);}
-h+=`<div class="agr-item"><div class="name">${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
+const _itDone=remDisp!=null&&remDisp<=0; // позицію вибрано повністю — приглушуємо
+h+=`<div class="agr-item" style="${_itDone?"opacity:.45;filter:grayscale(1)":""}"><div class="name" style="${_itDone?"color:var(--muted)":""}">${_itDone?"✓ ":""}${hl(it.commercial.slice(0,100),searchMode==="name"?q:"")}</div>`;
 h+=`<div class="mnn">${hl(it.mnn.slice(0,80),searchMode==="mnn"?q:"")}</div>`;
 h+=`<div class="row"><span>К-сть:</span><strong>${fmt(it.qty)} ${esc(dispUnit)}</strong></div>`;
 if(it.price!=null)h+=`<div class="row"><span>Ціна:</span><strong>${fmt(it.price)} грн</strong></div>`;
