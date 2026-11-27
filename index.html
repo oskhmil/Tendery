@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 135;
+const APP_VERSION = 136;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2085,7 +2085,11 @@ if(!d.allocAuto)h+=`<button class="alloc-apply" style="width:100%;margin-top:6px
 h+=`</div>`}
 h+=`<div style="font-size:12px;font-weight:600;margin-bottom:4px">Тендерні угоди:</div>`;
 d.t.forEach(t=>{
-  h+=`<div class="tender-card" style="${isAgrClosed(t.s,t.c)?"opacity:.6;border-left-color:var(--muted)":""}"><div class="sup">${esc(t.s)}${isAgrClosed(t.s,t.c)?` <span style="font-size:10px;color:var(--muted);font-weight:400">🔒 закрито вручну</span>`:""}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;
+  // Кілька угод на препарат: ті, що вже вибрані на 100%, приглушуємо — щоб око йшло на активну.
+  let _tDone=false;
+  if(d.t.length>1&&t.cq>0&&typeof t.consumed==="number"){const _ts=_tenderConsumedFor(t);_tDone=(_ts!=null?_ts:t.consumed)>=t.cq}
+  const _tDim=isAgrClosed(t.s,t.c)||_tDone;
+  h+=`<div class="tender-card" style="${_tDim?"opacity:.6;border-left-color:var(--muted)":""}"><div class="sup" style="${_tDim?"color:var(--muted)":""}">${_tDone&&!isAgrClosed(t.s,t.c)?"✓ ":""}${esc(t.s)}${isAgrClosed(t.s,t.c)?` <span style="font-size:10px;color:var(--muted);font-weight:400">🔒 закрито вручну</span>`:""}</div><div class="con">${esc(t.c)}</div><div class="comm">${esc(t.cn)}</div>`;
   if(t.mn)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">МНН: ${esc(t.mn)}</div>`;
   h+=`<div class="row"><span>К-сть:</span><span>${fmt(t.tq)} ${esc(t.tu)}${t.pk>1?` (×${t.pk}=${fmt(t.cq)} ${esc(d.u)})`:""}</span></div>`;
   // Per-tender consumption breakdown (only if cascading populated consumed)
