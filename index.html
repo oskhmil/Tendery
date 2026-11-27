@@ -276,7 +276,7 @@ const GDRIVE_T = "https://docs.google.com/spreadsheets/d/1gd8kH1DktGNZfX-XrjdaSl
 const GDRIVE_F6 = "https://docs.google.com/spreadsheets/d/1jq194kTuTJYyoqEagAI23dOPABtxefHY/export?format=xlsx";
 // Single source of truth for app version. Bump this on every release —
 // footer, CACHE_KEY and the update-checker all derive from it.
-const APP_VERSION = 131;
+const APP_VERSION = 132;
 const CACHE_KEY = "tendertrack_v"+APP_VERSION;
 // Stable key for user-configured data (VEN, manual orders, pending, qty overrides).
 // NOT tied to version — survives all code updates.
@@ -2117,6 +2117,28 @@ h+='<div style="text-align:center;padding:30px 20px;color:var(--muted);font-size
 el.innerHTML=h;
 }
 
+// Термін дії угоди: «… до 31.12.2027р» у рядку договору; якщо не вказано — до 31.12.2026.
+const AGR_DEFAULT_END=[2026,12,31];
+function agrEndDate(c){
+  const m=String(c||"").match(/(?:^|[\s,;])до\s*(\d{1,2})[.,]\s*(\d{1,2})[.,]\s*(\d{2,4})/);
+  if(m){let y=+m[3];if(y<100)y+=2000;return{y,mo:+m[2],d:+m[1],given:true}}
+  return{y:AGR_DEFAULT_END[0],mo:AGR_DEFAULT_END[1],d:AGR_DEFAULT_END[2],given:false};
+}
+function agrExpired(c){const e=agrEndDate(c);return Date.now()>new Date(e.y,e.mo-1,e.d,23,59,59).getTime()}
+function _agrEndTxt(c){const e=agrEndDate(c);return ("0"+e.d).slice(-2)+"."+("0"+e.mo).slice(-2)+"."+e.y}
+// Скільки вибрано по кожній позиції угоди (та сама логіка, що й у відображенні позицій)
+function agrItemStat(a,it){
+  const pms=allData.filter(d=>d.pq>0&&d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial)));
+  const pm=pms[0]||allData.find(d=>d.t.some(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial)));
+  if(!pm)return{cons:0,cap:it.qty,found:false};
+  const tc=pm.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial));const pk=tc?tc.pk:1;
+  const cons=pms.reduce((s,d)=>{const x=d.t.find(dt=>dt.s===a.supplier&&dt.c===a.contract&&cnEq(dt.cn,it.commercial));if(!x)return s;return s+(typeof x.consumed==="number"?x.consumed:(d.pq||0))},0);
+  const cap=tc?tc.cq:it.qty*(pk>1?pk:1);
+  return{cons,cap,found:true};
+}
+let expandedAgrSup=null;
+function toggleAgrSup(i){const s=(window._agrSups||[])[i];if(!s)return;expandedAgrSup=expandedAgrSup===s?null:s;expandedAgr=null;render()}
+function toggleAgr(i){const a=(window._agrList||[])[i];if(!a)return;const k=a.supplier+"|||"+a.contract;expandedAgr=expandedAgr===k?null:k;render()}
 function renderAgreements(el){
 const q=getActiveSearch();
 let agrs={};allTenders.forEach(t=>{const k=t.supplier+"|||"+t.contract;if(!agrs[k])agrs[k]={supplier:t.supplier,contract:t.contract,items:[]};agrs[k].items.push(t)});
@@ -2127,16 +2149,39 @@ else if(searchMode==="mnn")arr=arr.filter(a=>a.items.some(i=>multiMatch(i.mnn,w)
 else if(searchMode==="supplier")arr=arr.filter(a=>multiMatch(a.supplier,w));
 else if(searchMode==="contract")arr=arr.filter(a=>multiMatch(a.contract,w));
 }
-arr.sort((a,b)=>a.supplier.localeCompare(b.supplier,"uk"));
-let h=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${arr.length} угод</div>`;
+// Статус кожної угоди: вибрано повністю (усі позиції на 100%) / термін сплив / активна
 arr.forEach(a=>{
+  let c=0,cap=0,full=a.items.length>0;
+  a.items.forEach(it=>{const st=agrItemStat(a,it);c+=st.cons;cap+=st.cap;if(!st.found||st.cons<st.cap)full=false});
+  a.pct=cap>0?Math.round(c/cap*1000)/10:0;a.full=full;a.expired=agrExpired(a.contract);a.inactive=a.full||a.expired;
+  a.end=_agrEndTxt(a.contract);a.endGiven=agrEndDate(a.contract).given;
+  a.tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
+});
+const bySup={};arr.forEach(a=>{(bySup[a.supplier]=bySup[a.supplier]||[]).push(a)});
+const sups=Object.keys(bySup).sort((x,y)=>x.localeCompare(y,"uk"));
+window._agrSups=sups;window._agrList=[];
+const autoOpen=!!q; // під час пошуку постачальники зі збігами розгорнуті
+let h=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${sups.length} постачальників · ${arr.length} угод · активних ${arr.filter(a=>!a.inactive).length}</div>`;
+sups.forEach((sup,si)=>{
+const list=bySup[sup].slice().sort((x,y)=>(x.inactive-y.inactive)||(()=>{const da=cDate(x.contract),db=cDate(y.contract);return db[0]-da[0]||db[1]-da[1]||db[2]-da[2]})());
+const act=list.filter(a=>!a.inactive).length;
+const sum=list.filter(a=>!a.inactive).reduce((s,a)=>s+a.tv,0);
+const open=autoOpen||expandedAgrSup===sup;
+const allInactive=act===0;
+h+=`<div class="agr-card${open?" expanded":""}" style="${allInactive?"opacity:.55;":""}" onclick="toggleAgrSup(${si})">`;
+h+=`<div style="display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:12px;width:12px">${open?"▾":"▸"}</span><div class="agr-sup" style="flex:1;${allInactive?"color:var(--muted)":""}">${hl(sup,searchMode==="supplier"?q:"")}</div></div>`;
+h+=`<div class="agr-meta" style="padding-left:20px"><span>Угод: <strong>${list.length}</strong>${act<list.length?` (активних <strong style="color:var(--accent)">${act}</strong>)`:""}</span>${sum>0?`<span>Сума активних: <strong>${fmt(Math.round(sum))} грн</strong></span>`:""}</div>`;
+if(open){
+h+=`<div onclick="event.stopPropagation()" style="margin-top:8px;padding-left:12px;border-left:2px solid var(--border)">`;
+list.forEach(a=>{
+const ai=window._agrList.length;window._agrList.push(a);
 const k=a.supplier+"|||"+a.contract;const isE=expandedAgr===k;
-const tv=a.items.reduce((s,i)=>s+((i.price||0)*(i.qty||0)),0);
-h+=`<div class="agr-card${isE?" expanded":""}" onclick="expandedAgr=expandedAgr==='${k.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}'?null:'${k.replace(/\\/g,"\\\\").replace(/'/g,"\\'")}';render()">`;
-h+=`<div class="agr-sup">${hl(a.supplier,searchMode==="supplier"?q:"")}</div>`;
-h+=`<div class="agr-con">${hl(a.contract,searchMode==="contract"?q:"")}</div>`;
-h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${tv>0?`<span>Сума: <strong>${fmt(Math.round(tv))} грн</strong></span>`:""}</div>`;
-h+=`<div class="agr-detail" onclick="event.stopPropagation()">`;
+const tag=a.full?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">✓ вибрано повністю</span>`:a.expired?`<span style="font-size:10px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--muted)">⌛ термін сплив</span>`:"";
+h+=`<div class="agr-card${isE?" expanded":""}" style="${a.inactive?"opacity:.5;filter:grayscale(1);":""}background:rgba(255,255,255,.03)" onclick="toggleAgr(${ai})">`;
+h+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div class="agr-con" style="flex:1;font-size:13px;color:${a.inactive?"var(--muted)":"var(--text)"};font-weight:600">${hl(a.contract,searchMode==="contract"?q:"")}</div>${tag}</div>`;
+h+=`<div class="agr-meta"><span>Позицій: <strong>${a.items.length}</strong></span>${a.tv>0?`<span>Сума: <strong>${fmt(Math.round(a.tv))} грн</strong></span>`:""}<span>Вибрано: <strong style="color:${a.pct>=100?"var(--danger)":a.pct>=80?"var(--warn)":"var(--green)"}">${a.pct}%</strong></span><span>Діє до: <strong>${a.end}</strong>${a.endGiven?"":" <span style=\"font-size:10px\">(за замовч.)</span>"}</span></div>`;
+if(isE){
+h+=`<div class="agr-detail" style="display:block" onclick="event.stopPropagation()">`;
 a.items.forEach(it=>{
 // Одна тендерна позиція часто набирається кількома назвами з 1С (скляні + пластикові
 // пляшки, різні написання). Раніше тут стояв .find() і рахувалась ЛИШЕ ПЕРША назва,
@@ -2174,7 +2219,13 @@ if(consParts)h+=`<div style="font-size:10px;color:var(--muted);margin-top:2px">�
 else h+=`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">Не знайдено в закупівлях</div>`;
 h+=`</div>`;
 });
-h+=`</div></div>`;
+h+=`</div>`;
+}
+h+=`</div>`;
+});
+h+=`</div>`;
+}
+h+=`</div>`;
 });
 el.innerHTML=h;
 }
